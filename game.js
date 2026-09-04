@@ -120,7 +120,7 @@ async function submitFinalScore() {
   const payload = {
     player: localStorage.getItem('notTrollPlayer') || 'Anonimo',
     deaths: totalDeaths,
-    levels_completed: LEVELS.length,
+    levels_completed: totalLevels,
     score: Math.max(0, 10000 - totalDeaths * 100),
   };
   try {
@@ -150,236 +150,61 @@ const CAM_SMOOTH = 8;          // higher = camera catches up to target faster
 const GROUND_LIFT = 90;        // shift the whole world up, leaving a clear strip at the
                                 // bottom of the canvas for the overlaid touch controls
 
-// ---------- Level definitions ----------
-// Coordinate space: y grows downward. Ground baseline around y=500.
-// Trap types: solid, spike, hidden_spike, fake_floor, crumble, saw, wall_spike
-function rect(x, y, w, h) { return { x, y, w, h }; }
-
-const LEVELS = [
-  // Level 1 — tutorial: run and jump
-  {
-    name: 'Nivel 1',
-    hint: 'Flechas / A-D para moverte, Espacio para saltar',
-    width: 1400,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1320, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 500, 40), type: 'solid' },
-      { ...rect(560, 500, 300, 40), type: 'solid' },
-      { ...rect(920, 460, 200, 40), type: 'solid' },
-      { ...rect(1180, 500, 220, 40), type: 'solid' },
-    ],
-    hazards: [
-      { ...rect(500, 480, 60, 60), type: 'spike' },
-    ],
-  },
-
-  // Level 2 — gaps and a spike pit
-  {
-    name: 'Nivel 2',
-    hint: 'Cuidado con los huecos',
-    width: 1600,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1520, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 300, 40), type: 'solid' },
-      { ...rect(400, 500, 220, 40), type: 'solid' },
-      { ...rect(720, 460, 160, 40), type: 'solid' },
-      { ...rect(980, 500, 160, 40), type: 'solid' },
-      { ...rect(1240, 440, 160, 40), type: 'solid' },
-      { ...rect(1480, 500, 120, 40), type: 'solid' },
-    ],
-    hazards: [
-      { ...rect(300, 520, 100, 20), type: 'spike' },
-      { ...rect(620, 520, 100, 20), type: 'spike' },
-      { ...rect(880, 520, 100, 20), type: 'spike' },
-      { ...rect(1140, 520, 100, 20), type: 'spike' },
-    ],
-  },
-
-  // Level 3 — introduces the hidden spike trap (looks like normal floor)
-  {
-    name: 'Nivel 3',
-    hint: '¿Ese piso se ve... demasiado normal?',
-    width: 1500,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1420, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 400, 40), type: 'solid' },
-      { ...rect(400, 500, 200, 40), type: 'hidden_spike', triggerX: 430, delay: 0.28 },
-      { ...rect(600, 500, 260, 40), type: 'solid' },
-      { ...rect(940, 500, 160, 40), type: 'hidden_spike', triggerX: 960, delay: 0.22 },
-      { ...rect(1100, 500, 350, 40), type: 'solid' },
-    ],
-    hazards: [],
-  },
-
-  // Level 4 — more hidden spikes, tighter timing
-  {
-    name: 'Nivel 4',
-    hint: 'Aprende el patrón, no confíes en tus ojos',
-    width: 1600,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1520, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 300, 40), type: 'solid' },
-      { ...rect(300, 500, 180, 40), type: 'hidden_spike', triggerX: 330, delay: 0.25 },
-      { ...rect(480, 500, 200, 40), type: 'solid' },
-      { ...rect(680, 460, 160, 40), type: 'hidden_spike', triggerX: 700, delay: 0.2 },
-      { ...rect(840, 460, 160, 40), type: 'solid' },
-      { ...rect(1000, 500, 200, 40), type: 'hidden_spike', triggerX: 1030, delay: 0.25 },
-      { ...rect(1200, 500, 340, 40), type: 'solid' },
-    ],
-    hazards: [],
-  },
-
-  // Level 5 — fake floor (looks identical to solid ground, but you fall through)
-  {
-    name: 'Nivel 5',
-    hint: 'No todo lo que parece sólido lo es',
-    width: 1500,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1420, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 350, 40), type: 'solid' },
-      { ...rect(350, 500, 100, 40), type: 'fake_floor' },
-      { ...rect(450, 500, 340, 40), type: 'solid' },
-      { ...rect(790, 500, 100, 40), type: 'fake_floor' },
-      { ...rect(890, 500, 610, 40), type: 'solid' },
-    ],
-    hazards: [
-      { ...rect(-50, 620, 2000, 40), type: 'void' },
-    ],
-  },
-
-  // Level 6 — crumbling floor
-  {
-    name: 'Nivel 6',
-    hint: 'Corre antes de que se caiga',
-    width: 1600,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1520, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 300, 40), type: 'solid' },
-      { ...rect(300, 500, 120, 40), type: 'crumble', delay: 0.35 },
-      { ...rect(420, 500, 120, 40), type: 'crumble', delay: 0.35 },
-      { ...rect(540, 500, 120, 40), type: 'crumble', delay: 0.35 },
-      { ...rect(700, 460, 300, 40), type: 'solid' },
-      { ...rect(1080, 500, 160, 40), type: 'crumble', delay: 0.3 },
-      { ...rect(1300, 500, 300, 40), type: 'solid' },
-    ],
-    hazards: [
-      { ...rect(-50, 620, 2000, 40), type: 'void' },
-    ],
-  },
-
-  // Level 7 — moving saw
-  {
-    name: 'Nivel 7',
-    hint: 'La sierra no perdona',
-    width: 1600,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1520, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 1600, 40), type: 'solid' },
-    ],
-    hazards: [
-      { ...rect(-50, 620, 2000, 40), type: 'void_disabled' }, // unused, kept for symmetry
-    ],
-    saws: [
-      { x: 500, y: 470, r: 22, minX: 400, maxX: 700, speed: 160 },
-      { x: 1000, y: 470, r: 22, minX: 900, maxX: 1300, speed: 220 },
-    ],
-  },
-
-  // Level 8 — wall spikes that shoot out when you pass
-  {
-    name: 'Nivel 8',
-    hint: 'Las paredes también muerden',
-    width: 1600,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1520, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 1600, 40), type: 'solid' },
-    ],
-    hazards: [],
-    wallSpikes: [
-      // short, ground-level spikes — clear jump apex by a wide margin, and a narrower reach
-      // means a jump timed anywhere near the wall clears past it, not just a frame-perfect window
-      { x: 500, y: 430, w: 24, h: 70, reach: 55, triggerX: 470, delay: 0.25, dir: 1 },
-      { x: 1000, y: 430, w: 24, h: 70, reach: 55, triggerX: 970, delay: 0.25, dir: 1 },
-    ],
-  },
-
-  // Level 9 — everything combined
-  {
-    name: 'Nivel 9 — Prueba final',
-    hint: 'Todo lo aprendido, junto',
-    width: 2000,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1920, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 300, 40), type: 'solid' },
-      { ...rect(300, 500, 160, 40), type: 'hidden_spike', triggerX: 330, delay: 0.22 },
-      { ...rect(460, 500, 160, 40), type: 'crumble', delay: 0.3 },
-      { ...rect(620, 460, 200, 40), type: 'solid' },
-      { ...rect(820, 460, 100, 40), type: 'fake_floor' },
-      { ...rect(920, 460, 60, 40), type: 'solid' },
-      { ...rect(980, 500, 260, 40), type: 'solid' },
-      { ...rect(1240, 500, 160, 40), type: 'hidden_spike', triggerX: 1270, delay: 0.2 },
-      { ...rect(1400, 460, 260, 40), type: 'solid' },
-      { ...rect(1660, 460, 160, 40), type: 'crumble', delay: 0.28 },
-      { ...rect(1820, 500, 200, 40), type: 'solid' },
-    ],
-    hazards: [
-      { ...rect(-50, 620, 2200, 40), type: 'void' },
-    ],
-    saws: [
-      { x: 720, y: 430, r: 20, minX: 640, maxX: 800, speed: 180 },
-    ],
-    wallSpikes: [
-      { x: 1500, y: 430, w: 24, h: 70, reach: 55, triggerX: 1470, delay: 0.22, dir: 1 },
-    ],
-  },
-];
-
-// Levels above are authored against the original baseline (ground ~y=500).
-// Lift every y-coordinate up by GROUND_LIFT so the bottom of the canvas stays
-// clear for the touch controls, without hand-editing each level's numbers —
-// a uniform shift preserves every relative distance (gaps, ledge heights,
-// spawn-to-ground clearance) exactly as authored.
-for (const lvl of LEVELS) {
-  lvl.spawn.y -= GROUND_LIFT;
-  lvl.goal.y -= GROUND_LIFT;
-  for (const p of lvl.platforms || []) p.y -= GROUND_LIFT;
-  for (const h of lvl.hazards || []) {
-    if (h.type === 'void') continue; // deliberately far below the screen — leave it there
-    h.y -= GROUND_LIFT;
+// ---------- Remote level loading ----------
+async function fetchLevel(index) {
+  if (!API_BASE_URL) {
+    throw new Error('Configura window.API_BASE_URL para cargar niveles desde el backend.');
   }
-  for (const s of lvl.saws || []) s.y -= GROUND_LIFT;
-  for (const w of lvl.wallSpikes || []) w.y -= GROUND_LIFT;
+  const res = await fetch(API_BASE_URL + '/levels/' + index);
+  if (!res.ok) throw new Error('No se pudo cargar el nivel.');
+  return res.json();
 }
 
 // ---------- Runtime state ----------
 let levelIndex = 0;
+let totalLevels = 0;
 let level, player, camX, camTarget, deaths, totalDeaths, particles, stars, shake, portalMotes;
 let saws = [], wallSpikes = [], platformState = [];
 let state = 'intro'; // intro | playing | dead | complete
 let stateTimer = 0;
 let flash = 0; // full-screen flash overlay alpha, decays each frame
 let portalCenter = null, pullStart = null, completeDuration = 1.1;
+camX = 0;
+deaths = 0;
+totalDeaths = 0;
+particles = [];
+stars = [];
+shake = { t: 0, mag: 0 };
 
-function loadLevel(i) {
-  levelIndex = i;
-  level = LEVELS[levelIndex];
-  deaths = 0;
-  if (i === 0) totalDeaths = 0;
-  levelLabel.textContent = level.name;
-  deathLabel.textContent = 'Muertes: 0';
-  stars = makeStars(level.width);
-  portalMotes = makePortalMotes();
-  resetEntities();
-  showIntro();
+async function loadLevel(i) {
+  try {
+    state = 'loading';
+    overlayTitle.textContent = 'Cargando...';
+    overlaySub.textContent = '';
+    overlayTitle.classList.add('show');
+    const data = await fetchLevel(i);
+    levelIndex = data.index;
+    totalLevels = data.total_levels;
+    level = data.level;
+    deaths = 0;
+    if (i === 0) totalDeaths = 0;
+    levelLabel.textContent = level.name;
+    deathLabel.textContent = 'Muertes: 0';
+    progressFill.style.width = '0%';
+    stars = makeStars(level.width);
+    portalMotes = makePortalMotes();
+    resetEntities();
+    showIntro();
+  } catch (e) {
+    state = 'error';
+    levelLabel.textContent = 'API requerida';
+    deathLabel.textContent = 'Muertes: 0';
+    overlayTitle.textContent = 'Backend no configurado';
+    overlaySub.textContent = e.message;
+    overlayTitle.classList.add('show');
+    overlaySub.classList.add('show');
+    console.error(e);
+  }
 }
 
 function makePortalMotes() {
@@ -451,6 +276,7 @@ function resetEntities() {
 }
 
 function restartLevel() {
+  if (!level) return;
   deaths++;
   totalDeaths++;
   deathLabel.textContent = 'Muertes: ' + deaths;
@@ -561,6 +387,9 @@ function update(dt) {
     if (stateTimer <= 0) state = 'playing';
     return;
   }
+  if (state === 'loading' || state === 'error') {
+    return;
+  }
   if (state === 'complete') {
     const progress = Math.min(1, 1 - stateTimer / completeDuration);
     const ease = progress * progress; // ease-in: accelerates toward the portal
@@ -574,7 +403,7 @@ function update(dt) {
     stateTimer -= dt;
     if (stateTimer <= 0) {
       const next = levelIndex + 1;
-      if (next >= LEVELS.length) {
+      if (next >= totalLevels) {
         submitFinalScore();
         loadLevel(0);
       } else {
@@ -838,13 +667,15 @@ function render() {
   }
   ctx.translate(Math.round(-camX + shakeX), Math.round(shakeY));
 
-  drawPlatforms();
-  drawHazardsStatic();
-  drawSaws();
-  drawWallSpikes();
-  drawGoal();
-  if (!player.dead || state === 'dead') drawPlayer();
-  drawParticles();
+  if (level && player) {
+    drawPlatforms();
+    drawHazardsStatic();
+    drawSaws();
+    drawWallSpikes();
+    drawGoal();
+    if (!player.dead || state === 'dead') drawPlayer();
+    drawParticles();
+  }
 
   ctx.restore();
 

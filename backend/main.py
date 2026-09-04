@@ -9,6 +9,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from levels import level_count, shifted_level
+
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.getenv("DATABASE_PATH", BASE_DIR / "scores.db"))
@@ -78,6 +80,17 @@ def startup() -> None:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/levels/{level_index}")
+def get_level(level_index: int) -> dict:
+    if level_index < 0 or level_index >= level_count():
+        raise HTTPException(status_code=404, detail="Nivel no encontrado")
+    return {
+        "index": level_index,
+        "total_levels": level_count(),
+        "level": shifted_level(level_index),
+    }
 
 
 @app.get("/scores", response_model=list[ScoreOut])

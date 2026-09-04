@@ -112,6 +112,28 @@ if (btnLeft && btnRight && btnJump) {
   bindHoldButton(btnJump, 'Space', true);
 }
 
+// ---------- Optional backend API ----------
+const API_BASE_URL = (window.API_BASE_URL || '').replace(/\/$/, '');
+
+async function submitFinalScore() {
+  if (!API_BASE_URL) return;
+  const payload = {
+    player: localStorage.getItem('notTrollPlayer') || 'Anonimo',
+    deaths: totalDeaths,
+    levels_completed: LEVELS.length,
+    score: Math.max(0, 10000 - totalDeaths * 100),
+  };
+  try {
+    await fetch(`${API_BASE_URL}/scores`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    console.warn('No se pudo enviar el puntaje al backend.', e);
+  }
+}
+
 // ---------- Physics constants ----------
 const GRAVITY = 1800;
 const CUT_GRAVITY_MULT = 2.4;   // extra gravity when jump released early -> short hop control
@@ -340,7 +362,7 @@ for (const lvl of LEVELS) {
 
 // ---------- Runtime state ----------
 let levelIndex = 0;
-let level, player, camX, camTarget, deaths, particles, stars, shake, portalMotes;
+let level, player, camX, camTarget, deaths, totalDeaths, particles, stars, shake, portalMotes;
 let saws = [], wallSpikes = [], platformState = [];
 let state = 'intro'; // intro | playing | dead | complete
 let stateTimer = 0;
@@ -351,6 +373,7 @@ function loadLevel(i) {
   levelIndex = i;
   level = LEVELS[levelIndex];
   deaths = 0;
+  if (i === 0) totalDeaths = 0;
   levelLabel.textContent = level.name;
   deathLabel.textContent = 'Muertes: 0';
   stars = makeStars(level.width);
@@ -429,6 +452,7 @@ function resetEntities() {
 
 function restartLevel() {
   deaths++;
+  totalDeaths++;
   deathLabel.textContent = 'Muertes: ' + deaths;
   resetEntities();
   state = 'playing';
@@ -551,6 +575,7 @@ function update(dt) {
     if (stateTimer <= 0) {
       const next = levelIndex + 1;
       if (next >= LEVELS.length) {
+        submitFinalScore();
         loadLevel(0);
       } else {
         loadLevel(next);

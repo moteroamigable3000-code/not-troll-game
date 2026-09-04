@@ -81,6 +81,37 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => keys[e.code] = false);
 
+// ---------- Touch controls (mobile) ----------
+function bindHoldButton(el, code, isJump) {
+  const press = (e) => {
+    e.preventDefault();
+    if (isJump && !keys[code] && typeof player !== 'undefined' && player) {
+      player.jumpBuffer = JUMP_BUFFER_TIME;
+    }
+    keys[code] = true;
+    el.classList.add('active');
+  };
+  const release = (e) => {
+    e.preventDefault();
+    keys[code] = false;
+    el.classList.remove('active');
+  };
+  el.addEventListener('pointerdown', press);
+  el.addEventListener('pointerup', release);
+  el.addEventListener('pointercancel', release);
+  el.addEventListener('pointerleave', release);
+  el.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+const btnLeft = document.getElementById('btnLeft');
+const btnRight = document.getElementById('btnRight');
+const btnJump = document.getElementById('btnJump');
+if (btnLeft && btnRight && btnJump) {
+  bindHoldButton(btnLeft, 'ArrowLeft', false);
+  bindHoldButton(btnRight, 'ArrowRight', false);
+  bindHoldButton(btnJump, 'Space', true);
+}
+
 // ---------- Physics constants ----------
 const GRAVITY = 1800;
 const CUT_GRAVITY_MULT = 2.4;   // extra gravity when jump released early -> short hop control

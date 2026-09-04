@@ -4,10 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Not A Troll Game</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="wrap">
+    <div id="splashScreen">
+      <div id="splashLogoWrap">
+        <img id="splashLogo" src="recursos/EMPRESA.png" alt="BFJ Studios">
+        <div id="splashShine"></div>
+      </div>
+    </div>
     <div id="hud">
       <div id="levelLabel">Nivel 1</div>
       <div id="deathLabel">Muertes: 0</div>
@@ -32,6 +41,7 @@
     </div>
 
     <div id="mainMenu" class="screenOverlay">
+      <div id="mainMenuTagline">Evil Devil</div>
       <h1>Not A Troll Game</h1>
       <button id="playBtn" class="menuBtn">Jugar</button>
       <button id="mapMenuBtn" class="menuBtn">Niveles</button>
@@ -40,7 +50,12 @@
 
     <div id="levelMap" class="screenOverlay" hidden>
       <h2>Selecciona un nivel</h2>
-      <div id="levelGrid"></div>
+      <div id="mapCanvas">
+        <div class="mapMountains mapMountainsFar"></div>
+        <div class="mapMountains mapMountainsNear"></div>
+        <svg id="mapPath" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+        <div id="levelGrid"></div>
+      </div>
       <button class="menuBtn backBtn" data-close="levelMap">Volver</button>
     </div>
 
@@ -50,11 +65,18 @@
         <span>Sonido</span>
         <button id="soundToggleBtn" class="menuBtn">Sonido: ON</button>
       </div>
+      <div class="optionRow">
+        <span>Musica</span>
+        <button id="musicToggleBtn" class="menuBtn">Musica: ON</button>
+      </div>
+      <button id="menuFromOptionsBtn" class="menuBtn">Menu</button>
       <button class="menuBtn backBtn" data-close="optionsMenu">Volver</button>
     </div>
   </div>
   <script>
-    window.API_BASE_URL = '';
+    window.API_BASE_URL = ['localhost', '127.0.0.1'].includes(location.hostname)
+      ? 'http://127.0.0.1:8000'
+      : '';
   </script>
   <script src="game.min.js"></script>
 </body>

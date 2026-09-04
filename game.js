@@ -11,11 +11,25 @@ const overlaySub = document.getElementById('overlaySub');
 const progressFill = document.getElementById('progressFill');
 document.getElementById('restartBtn').onclick = () => restartLevel();
 
+// ---------- Studio splash ----------
+const splashScreen = document.getElementById('splashScreen');
+let splashActive = true;
+function dismissSplash() {
+  if (!splashActive) return;
+  splashActive = false;
+  splashScreen.classList.add('fadeOut');
+  setTimeout(() => { splashScreen.hidden = true; }, 650);
+}
+setTimeout(dismissSplash, 2200);
+splashScreen.addEventListener('click', dismissSplash);
+window.addEventListener('keydown', dismissSplash, { once: true });
+
 // ---------- Menus (main menu, level map, options) ----------
 const mainMenu = document.getElementById('mainMenu');
 const levelMap = document.getElementById('levelMap');
 const optionsMenu = document.getElementById('optionsMenu');
 const levelGrid = document.getElementById('levelGrid');
+const mapPath = document.getElementById('mapPath');
 const soundToggleBtn = document.getElementById('soundToggleBtn');
 let paused = false;
 let soundOn = localStorage.getItem('notTrollSoundOn') !== '0';
@@ -88,6 +102,65 @@ soundToggleBtn.addEventListener('click', () => {
   applySoundButtonLabel();
 });
 applySoundButtonLabel();
+
+// ---------- Music — two mutually-exclusive tracks. Gameplay music plays
+// only during an actual level (state === 'playing'); menu music plays only
+// over the main menu and the level map — never both, never over options
+// or the level intro/dead/complete transitions. ----------
+const musicToggleBtn = document.getElementById('musicToggleBtn');
+let musicOn = localStorage.getItem('notTrollMusicOn') !== '0';
+const bgMusic = new Audio('recursos/musica_indie_gameplay.wav');
+bgMusic.loop = true;
+bgMusic.volume = 0.35;
+const menuMusic = new Audio('recursos/musica_menu_y_mapa.wav');
+menuMusic.loop = true;
+menuMusic.volume = 0.35;
+
+function applyMusicButtonLabel() {
+  musicToggleBtn.textContent = 'Musica: ' + (musicOn ? 'ON' : 'OFF');
+}
+musicToggleBtn.addEventListener('click', () => {
+  musicOn = !musicOn;
+  localStorage.setItem('notTrollMusicOn', musicOn ? '1' : '0');
+  applyMusicButtonLabel();
+});
+applyMusicButtonLabel();
+
+// Checked every frame.
+function updateMusicPlayback() {
+  const menuVisible = !mainMenu.hidden || !levelMap.hidden;
+  const shouldPlayGameplay = musicOn && state === 'playing' && !paused;
+  const shouldPlayMenu = musicOn && menuVisible;
+  if (shouldPlayGameplay && bgMusic.paused) bgMusic.play().catch(() => {});
+  else if (!shouldPlayGameplay && !bgMusic.paused) bgMusic.pause();
+  if (shouldPlayMenu && menuMusic.paused) menuMusic.play().catch(() => {});
+  else if (!shouldPlayMenu && !menuMusic.paused) menuMusic.pause();
+}
+
+// Browsers require a real user gesture before any audio can play at all —
+// "prime" both tracks here, then immediately hand control back to
+// updateMusicPlayback() so only the right one actually plays.
+function primeMusic() {
+  bgMusic.play().then(() => { if (state !== 'playing' || paused) bgMusic.pause(); }).catch(() => {});
+  menuMusic.play().then(() => { if (mainMenu.hidden && levelMap.hidden) menuMusic.pause(); }).catch(() => {});
+}
+window.addEventListener('keydown', primeMusic, { once: true });
+window.addEventListener('pointerdown', primeMusic, { once: true });
+
+// ---------- Click sound — any UI button (menu, map node, options, HUD),
+// but not the on-screen movement pad, which fires far too rapidly for it. ----------
+const clickSound = new Audio('recursos/clic.wav');
+clickSound.volume = 0.5;
+document.addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn || btn.classList.contains('touchBtn') || !soundOn) return;
+  try { clickSound.currentTime = 0; clickSound.play().catch(() => {}); } catch (err) { /* ignore */ }
+});
+
+// ---------- Lock it down like a game, not a webpage ----------
+window.addEventListener('contextmenu', e => e.preventDefault());
+window.addEventListener('selectstart', e => e.preventDefault());
+canvas.addEventListener('dragstart', e => e.preventDefault());
 
 // ---------- Input ----------
 const keys = {};
@@ -187,17 +260,57 @@ async function saveProgress(unlocked) {
   }
 }
 
+// Hand-tuned zigzag so the map reads as a winding trail rather than a grid.
+// Positions beyond the tuned set fall back to a procedural zigzag so the
+// map still works if more levels are added to the backend later.
+const MAP_LAYOUT = [
+  { x: 12, y: 88 }, { x: 30, y: 76 }, { x: 20, y: 60 },
+  { x: 38, y: 48 }, { x: 58, y: 56 }, { x: 74, y: 42 },
+  { x: 56, y: 28 }, { x: 38, y: 16 }, { x: 60, y: 8 },
+];
+function nodePosition(i) {
+  if (MAP_LAYOUT[i]) return MAP_LAYOUT[i];
+  const row = Math.floor(i / 2);
+  const leftSide = i % 2 === 0;
+  return { x: leftSide ? 15 + (row % 3) * 5 : 65 + (row % 3) * 5, y: Math.max(4, 88 - row * 9) };
+}
+
+// Closed-padlock icon for locked map nodes — a plain line-art lock rather
+// than the default emoji, recolored to sit on the node's dark background.
+const LOCK_ICON_SVG = '<svg viewBox="0 0 24 24" width="60%" height="60%" fill="none">' +
+  '<path d="M7 10V7a5 5 0 0 1 10 0v3" stroke="#9a8fc7" stroke-width="2" stroke-linecap="round"/>' +
+  '<rect x="5" y="10" width="14" height="10" rx="2" fill="#332d4d" stroke="#9a8fc7" stroke-width="2"/>' +
+  '<circle cx="12" cy="14.3" r="1.5" fill="#9a8fc7"/>' +
+  '<rect x="11.1" y="15.2" width="1.8" height="2.6" rx="0.5" fill="#9a8fc7"/>' +
+  '</svg>';
+
+function drawMapPath(positions) {
+  if (positions.length < 2) { mapPath.innerHTML = ''; return; }
+  const toD = pts => 'M ' + pts.map(p => p.x + ' ' + p.y).join(' L ');
+  const traveledCount = Math.min(positions.length, Math.max(1, unlockedLevels));
+  mapPath.innerHTML =
+    `<path d="${toD(positions)}" class="mapPathFull"/>` +
+    `<path d="${toD(positions.slice(0, traveledCount))}" class="mapPathTraveled"/>`;
+}
+
 function buildLevelGrid() {
   levelGrid.innerHTML = '';
   const count = levelsMeta.length || totalLevels || 1;
+  const positions = [];
   for (let i = 0; i < count; i++) {
+    const pos = nodePosition(i);
+    positions.push(pos);
     const meta = levelsMeta[i] || { name: 'Nivel ' + (i + 1) };
     const locked = i >= unlockedLevels;
+    const isCurrent = !locked && i === unlockedLevels - 1;
     const btn = document.createElement('button');
-    btn.className = 'levelNode' + (locked ? ' locked' : '');
+    btn.className = 'levelNode' + (locked ? ' locked' : '') + (isCurrent ? ' current' : '');
     btn.disabled = locked;
     btn.title = meta.name;
-    btn.textContent = locked ? '\u{1F512}' : String(i + 1);
+    btn.style.left = pos.x + '%';
+    btn.style.top = pos.y + '%';
+    if (locked) btn.innerHTML = LOCK_ICON_SVG;
+    else btn.textContent = String(i + 1);
     btn.addEventListener('click', () => {
       if (locked) return;
       closeAllScreens();
@@ -205,6 +318,7 @@ function buildLevelGrid() {
     });
     levelGrid.appendChild(btn);
   }
+  drawMapPath(positions);
 }
 
 function showScreen(el) {
@@ -239,6 +353,7 @@ document.getElementById('mapMenuBtn').addEventListener('click', openLevelMap);
 document.getElementById('optionsMenuBtn').addEventListener('click', openOptionsMenu);
 document.getElementById('mapBtn').addEventListener('click', () => { if (level) openLevelMap(); });
 document.getElementById('optionsBtn').addEventListener('click', () => { if (level) openOptionsMenu(); });
+document.getElementById('menuFromOptionsBtn').addEventListener('click', () => showScreen(mainMenu));
 document.querySelectorAll('[data-close]').forEach(btn => {
   btn.addEventListener('click', () => {
     closeAllScreens();
@@ -418,6 +533,8 @@ function resetEntities() {
       // narrow danger strip inside the platform — wide enough to notice, narrow enough to jump over
       spikeX: p.type === 'hidden_spike' ? p.x + p.w / 2 - spikeW / 2 : 0,
       shardsSpawned: false,
+      falling: false,
+      fallVy: 0,
     };
   });
 }
@@ -522,6 +639,7 @@ function frame(now) {
 
   update(dt);
   render();
+  updateMusicPlayback();
   requestAnimationFrame(frame);
 }
 
@@ -709,6 +827,10 @@ function overlap(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
+function rect(x, y, w, h) {
+  return { x, y, w, h };
+}
+
 function updateTraps(dt) {
   for (const p of platformState) {
     if (p.type === 'hidden_spike') {
@@ -735,6 +857,23 @@ function updateTraps(dt) {
           color: '#8b5a2b', size: 6, life: 0.6, maxLife: 0.6, speedRange: 140, gravity: 1400, type: 'debris',
         });
       }
+    }
+    // Fake floor: the moment the player actually falls through it, the
+    // block itself drops away too instead of just sitting there — sells
+    // the "the floor was never real" gag instead of the player silently
+    // clipping through a static tile.
+    if (p.type === 'fake_floor' && !p.falling && overlap(player, p)) {
+      p.falling = true;
+      p.fallVy = 40;
+      Sound.crumble();
+      spawnBurst(p.x + p.w / 2, p.y + p.h / 2, 12, {
+        color: '#3d6b30', size: 6, life: 0.6, maxLife: 0.6, speedRange: 160, gravity: 1200, type: 'debris',
+      });
+    }
+    if (p.falling && !p.gone) {
+      p.fallVy += 2000 * dt;
+      p.y += p.fallVy * dt;
+      if (p.y > H + 200) p.gone = true;
     }
   }
 }

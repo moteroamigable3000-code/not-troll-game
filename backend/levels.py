@@ -198,3 +198,10 @@ def shifted_level(index: int) -> dict:
 
 def level_count() -> int:
     return len(LEVELS)
+
+
+def level_meta() -> list[dict]:
+    return [
+        {"index": i, "name": lvl["name"], "hint": lvl.get("hint", "")}
+        for i, lvl in enumerate(LEVELS)
+    ]

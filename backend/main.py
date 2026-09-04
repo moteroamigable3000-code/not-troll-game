@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from levels import level_count, shifted_level
+from levels import level_count, level_meta, shifted_level
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -50,6 +50,16 @@ class ScoreOut(ScoreIn):
     created_at: str
 
 
+class ProgressIn(BaseModel):
+    player_id: str = Field(min_length=1, max_length=64)
+    unlocked: int = Field(ge=1, le=99)
+
+
+class ProgressOut(BaseModel):
+    player_id: str
+    unlocked: int
+
+
 def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -67,6 +77,15 @@ def init_db() -> None:
                 levels_completed INTEGER NOT NULL,
                 score INTEGER NOT NULL,
                 created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS progress (
+                player_id TEXT PRIMARY KEY,
+                unlocked INTEGER NOT NULL,
+                updated_at TEXT NOT NULL
             )
             """
         )
@@ -91,6 +110,46 @@ def get_level(level_index: int) -> dict:
         "total_levels": level_count(),
         "level": shifted_level(level_index),
     }
+
+
+@app.get("/levels")
+def get_levels() -> dict:
+    return {"total_levels": level_count(), "levels": level_meta()}
+
+
+@app.get("/progress/{player_id}", response_model=ProgressOut)
+def get_progress(player_id: str) -> dict:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT player_id, unlocked FROM progress WHERE player_id = ?",
+            (player_id,),
+        ).fetchone()
+    if row is None:
+        return {"player_id": player_id, "unlocked": 1}
+    return {"player_id": row["player_id"], "unlocked": row["unlocked"]}
+
+
+@app.post("/progress", response_model=ProgressOut)
+def save_progress(progress: ProgressIn) -> dict:
+    unlocked = min(progress.unlocked, level_count())
+    now = datetime.now(timezone.utc).isoformat()
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT unlocked FROM progress WHERE player_id = ?",
+            (progress.player_id,),
+        ).fetchone()
+        new_unlocked = max(unlocked, row["unlocked"]) if row is not None else unlocked
+        conn.execute(
+            """
+            INSERT INTO progress (player_id, unlocked, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(player_id) DO UPDATE SET
+                unlocked = excluded.unlocked,
+                updated_at = excluded.updated_at
+            """,
+            (progress.player_id, new_unlocked, now),
+        )
+    return {"player_id": progress.player_id, "unlocked": new_unlocked}
 
 
 @app.get("/scores", response_model=list[ScoreOut])

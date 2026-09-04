@@ -11,6 +11,8 @@
     <div id="hud">
       <div id="levelLabel">Nivel 1</div>
       <div id="deathLabel">Muertes: 0</div>
+      <button id="mapBtn" class="menuBtn">Mapa (Esc)</button>
+      <button id="optionsBtn" class="menuBtn">Opciones</button>
       <button id="restartBtn">Reiniciar (R)</button>
     </div>
     <div id="progressTrack"><div id="progressFill"></div></div>
@@ -27,6 +29,28 @@
         </div>
         <button id="btnJump" class="touchBtn" aria-label="Saltar"></button>
       </div>
+    </div>
+
+    <div id="mainMenu" class="screenOverlay">
+      <h1>Not A Troll Game</h1>
+      <button id="playBtn" class="menuBtn">Jugar</button>
+      <button id="mapMenuBtn" class="menuBtn">Niveles</button>
+      <button id="optionsMenuBtn" class="menuBtn">Opciones</button>
+    </div>
+
+    <div id="levelMap" class="screenOverlay" hidden>
+      <h2>Selecciona un nivel</h2>
+      <div id="levelGrid"></div>
+      <button class="menuBtn backBtn" data-close="levelMap">Volver</button>
+    </div>
+
+    <div id="optionsMenu" class="screenOverlay" hidden>
+      <h2>Opciones</h2>
+      <div class="optionRow">
+        <span>Sonido</span>
+        <button id="soundToggleBtn" class="menuBtn">Sonido: ON</button>
+      </div>
+      <button class="menuBtn backBtn" data-close="optionsMenu">Volver</button>
     </div>
   </div>
   <script>

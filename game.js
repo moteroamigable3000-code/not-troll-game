@@ -11,6 +11,15 @@ const overlaySub = document.getElementById('overlaySub');
 const progressFill = document.getElementById('progressFill');
 document.getElementById('restartBtn').onclick = () => restartLevel();
 
+// ---------- Menus (main menu, level map, options) ----------
+const mainMenu = document.getElementById('mainMenu');
+const levelMap = document.getElementById('levelMap');
+const optionsMenu = document.getElementById('optionsMenu');
+const levelGrid = document.getElementById('levelGrid');
+const soundToggleBtn = document.getElementById('soundToggleBtn');
+let paused = false;
+let soundOn = localStorage.getItem('notTrollSoundOn') !== '0';
+
 // ---------- Sound (synthesized, no assets needed) ----------
 const Sound = (() => {
   let ctxA = null;
@@ -23,6 +32,7 @@ const Sound = (() => {
     return ctxA;
   }
   function tone(freq, dur, type, gain, glideTo) {
+    if (!soundOn) return;
     const a = ac();
     if (!a) return;
     try {
@@ -39,6 +49,7 @@ const Sound = (() => {
     } catch (e) { /* audio unsupported in this context — fail silently */ }
   }
   function noise(dur, gain) {
+    if (!soundOn) return;
     const a = ac();
     if (!a) return;
     try {
@@ -68,10 +79,28 @@ const Sound = (() => {
 window.addEventListener('keydown', () => Sound.resume(), { once: true });
 window.addEventListener('pointerdown', () => Sound.resume(), { once: true });
 
+function applySoundButtonLabel() {
+  soundToggleBtn.textContent = 'Sonido: ' + (soundOn ? 'ON' : 'OFF');
+}
+soundToggleBtn.addEventListener('click', () => {
+  soundOn = !soundOn;
+  localStorage.setItem('notTrollSoundOn', soundOn ? '1' : '0');
+  applySoundButtonLabel();
+});
+applySoundButtonLabel();
+
 // ---------- Input ----------
 const keys = {};
 const JUMP_CODES = ['Space', 'ArrowUp', 'KeyW'];
 window.addEventListener('keydown', e => {
+  if (e.code === 'Escape') {
+    if (level) {
+      if (paused) closeAllScreens();
+      else openLevelMap();
+    }
+    return;
+  }
+  if (paused) return;
   if (JUMP_CODES.includes(e.code) && !keys[e.code] && typeof player !== 'undefined' && player) {
     player.jumpBuffer = JUMP_BUFFER_TIME;
   }
@@ -114,6 +143,124 @@ if (btnLeft && btnRight && btnJump) {
 
 // ---------- Optional backend API ----------
 const API_BASE_URL = (window.API_BASE_URL || '').replace(/\/$/, '');
+
+function getPlayerId() {
+  let id = localStorage.getItem('notTrollPlayerId');
+  if (!id) {
+    id = window.crypto && crypto.randomUUID
+      ? crypto.randomUUID()
+      : 'p-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem('notTrollPlayerId', id);
+  }
+  return id;
+}
+const PLAYER_ID = getPlayerId();
+let unlockedLevels = 1;
+let levelsMeta = [];
+
+async function fetchLevelsMeta() {
+  const res = await fetch(API_BASE_URL + '/levels');
+  if (!res.ok) throw new Error('No se pudo cargar la lista de niveles.');
+  return res.json();
+}
+
+async function fetchProgress() {
+  const res = await fetch(API_BASE_URL + '/progress/' + encodeURIComponent(PLAYER_ID));
+  if (!res.ok) throw new Error('No se pudo cargar el progreso.');
+  return res.json();
+}
+
+async function saveProgress(unlocked) {
+  if (!API_BASE_URL) return;
+  try {
+    const res = await fetch(API_BASE_URL + '/progress', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ player_id: PLAYER_ID, unlocked }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      unlockedLevels = Math.max(unlockedLevels, data.unlocked);
+    }
+  } catch (e) {
+    console.warn('No se pudo guardar el progreso.', e);
+  }
+}
+
+function buildLevelGrid() {
+  levelGrid.innerHTML = '';
+  const count = levelsMeta.length || totalLevels || 1;
+  for (let i = 0; i < count; i++) {
+    const meta = levelsMeta[i] || { name: 'Nivel ' + (i + 1) };
+    const locked = i >= unlockedLevels;
+    const btn = document.createElement('button');
+    btn.className = 'levelNode' + (locked ? ' locked' : '');
+    btn.disabled = locked;
+    btn.title = meta.name;
+    btn.textContent = locked ? '\u{1F512}' : String(i + 1);
+    btn.addEventListener('click', () => {
+      if (locked) return;
+      closeAllScreens();
+      loadLevel(i);
+    });
+    levelGrid.appendChild(btn);
+  }
+}
+
+function showScreen(el) {
+  mainMenu.hidden = true;
+  levelMap.hidden = true;
+  optionsMenu.hidden = true;
+  el.hidden = false;
+  paused = true;
+}
+
+function closeAllScreens() {
+  mainMenu.hidden = true;
+  levelMap.hidden = true;
+  optionsMenu.hidden = true;
+  paused = false;
+}
+
+function openLevelMap() {
+  buildLevelGrid();
+  showScreen(levelMap);
+}
+
+function openOptionsMenu() {
+  showScreen(optionsMenu);
+}
+
+document.getElementById('playBtn').addEventListener('click', () => {
+  closeAllScreens();
+  loadLevel(Math.max(0, unlockedLevels - 1));
+});
+document.getElementById('mapMenuBtn').addEventListener('click', openLevelMap);
+document.getElementById('optionsMenuBtn').addEventListener('click', openOptionsMenu);
+document.getElementById('mapBtn').addEventListener('click', () => { if (level) openLevelMap(); });
+document.getElementById('optionsBtn').addEventListener('click', () => { if (level) openOptionsMenu(); });
+document.querySelectorAll('[data-close]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    closeAllScreens();
+    if (!level) mainMenu.hidden = false;
+  });
+});
+
+async function initMenus() {
+  try {
+    const meta = await fetchLevelsMeta();
+    totalLevels = meta.total_levels;
+    levelsMeta = meta.levels;
+  } catch (e) {
+    console.warn(e);
+  }
+  try {
+    const progress = await fetchProgress();
+    unlockedLevels = progress.unlocked;
+  } catch (e) {
+    console.warn(e);
+  }
+}
 
 async function submitFinalScore() {
   if (!API_BASE_URL) return;
@@ -165,7 +312,7 @@ let levelIndex = 0;
 let totalLevels = 0;
 let level, player, camX, camTarget, deaths, totalDeaths, particles, stars, shake, portalMotes;
 let saws = [], wallSpikes = [], platformState = [];
-let state = 'intro'; // intro | playing | dead | complete
+let state = 'menu'; // menu | intro | playing | dead | complete
 let stateTimer = 0;
 let flash = 0; // full-screen flash overlay alpha, decays each frame
 let portalCenter = null, pullStart = null, completeDuration = 1.1;
@@ -379,6 +526,7 @@ function frame(now) {
 }
 
 function update(dt) {
+  if (paused) return;
   updateShake(dt);
   flash = Math.max(0, flash - dt * 1.8);
 
@@ -387,7 +535,7 @@ function update(dt) {
     if (stateTimer <= 0) state = 'playing';
     return;
   }
-  if (state === 'loading' || state === 'error') {
+  if (state === 'menu' || state === 'loading' || state === 'error') {
     return;
   }
   if (state === 'complete') {
@@ -405,8 +553,10 @@ function update(dt) {
       const next = levelIndex + 1;
       if (next >= totalLevels) {
         submitFinalScore();
+        saveProgress(totalLevels);
         loadLevel(0);
       } else {
+        if (next + 1 > unlockedLevels) saveProgress(next + 1);
         loadLevel(next);
       }
     }
@@ -1105,5 +1255,5 @@ function drawParticles() {
 }
 
 // ---------- Start ----------
-loadLevel(0);
+initMenus();
 requestAnimationFrame(frame);

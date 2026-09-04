@@ -152,6 +152,10 @@ canvas {
   border-color: #fff;
 }
 
-@media (pointer: coarse) {
+/* Show touch controls whenever the device reports a coarse (touch) pointer,
+   OR the screen is narrow enough to likely be a phone/tablet — some
+   tablets/emulators only resize the viewport without flagging themselves
+   as touch, so pointer-type alone isn't a reliable enough signal. */
+@media (pointer: coarse), (max-width: 1024px) {
   #touchControls { display: flex; }
 }

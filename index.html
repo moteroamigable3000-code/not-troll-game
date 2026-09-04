@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Not A Troll Game</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="wrap">
+    <div id="hud">
+      <div id="levelLabel">Nivel 1</div>
+      <div id="deathLabel">Muertes: 0</div>
+      <button id="restartBtn">Reiniciar (R)</button>
+    </div>
+    <div id="progressTrack"><div id="progressFill"></div></div>
+    <div id="canvasArea">
+      <canvas id="game" width="960" height="540"></canvas>
+      <div id="overlay">
+        <div id="overlayTitle"></div>
+        <div id="overlaySub"></div>
+      </div>
+      <div id="touchControls">
+        <div class="pad">
+          <button id="btnLeft" class="touchBtn" aria-label="Izquierda"></button>
+          <button id="btnRight" class="touchBtn" aria-label="Derecha"></button>
+        </div>
+        <button id="btnJump" class="touchBtn" aria-label="Saltar"></button>
+      </div>
+    </div>
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>

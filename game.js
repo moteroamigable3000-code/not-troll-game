@@ -125,6 +125,8 @@ const MAX_FALL = 900;
 const COYOTE_TIME = 0.09;     // grace jump window after leaving a ledge
 const JUMP_BUFFER_TIME = 0.12; // queue a jump pressed slightly before landing
 const CAM_SMOOTH = 8;          // higher = camera catches up to target faster
+const GROUND_LIFT = 90;        // shift the whole world up, leaving a clear strip at the
+                                // bottom of the canvas for the overlaid touch controls
 
 // ---------- Level definitions ----------
 // Coordinate space: y grows downward. Ground baseline around y=500.
@@ -318,6 +320,23 @@ const LEVELS = [
     ],
   },
 ];
+
+// Levels above are authored against the original baseline (ground ~y=500).
+// Lift every y-coordinate up by GROUND_LIFT so the bottom of the canvas stays
+// clear for the touch controls, without hand-editing each level's numbers —
+// a uniform shift preserves every relative distance (gaps, ledge heights,
+// spawn-to-ground clearance) exactly as authored.
+for (const lvl of LEVELS) {
+  lvl.spawn.y -= GROUND_LIFT;
+  lvl.goal.y -= GROUND_LIFT;
+  for (const p of lvl.platforms || []) p.y -= GROUND_LIFT;
+  for (const h of lvl.hazards || []) {
+    if (h.type === 'void') continue; // deliberately far below the screen — leave it there
+    h.y -= GROUND_LIFT;
+  }
+  for (const s of lvl.saws || []) s.y -= GROUND_LIFT;
+  for (const w of lvl.wallSpikes || []) w.y -= GROUND_LIFT;
+}
 
 // ---------- Runtime state ----------
 let levelIndex = 0;
@@ -640,7 +659,7 @@ function updatePlayer(dt) {
     if (Math.random() < 0.35) spawnDust(player.x + player.w / 2, player.y + player.h, 1);
   }
 
-  player.falling = !player.onGround && player.y > H - 40;
+  player.falling = !player.onGround && player.y > H - 40 - GROUND_LIFT;
   if (player.falling) player.rotation += dt * 9 * (player.facing || 1);
   else player.rotation *= Math.max(0, 1 - dt * 10);
 }

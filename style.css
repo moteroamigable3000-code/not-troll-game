@@ -109,26 +109,35 @@ canvas {
   100% { opacity: 0; }
 }
 
-/* Touch controls — live in their own strip BELOW the canvas so they never
-   cover gameplay; hidden entirely on non-touch (mouse/keyboard) devices */
+/* Touch controls — overlaid on the bottom of the canvas itself; hidden
+   entirely on non-touch (mouse/keyboard) devices */
 #touchControls {
   display: none;
-  align-items: center;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  align-items: flex-end;
   justify-content: space-between;
-  padding: 18px 6px 6px;
+  padding: 0 14px 14px;
+  pointer-events: none;
 }
 
 #touchControls .pad {
   display: flex;
   gap: 14px;
+  pointer-events: none;
 }
 
 .touchBtn {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
+  /* scales with the canvas's own rendered width, so it shrinks in step with
+     it on narrow screens instead of eating further into the raised ground.
+     vw (not %) because the immediate parent, .pad, has no width of its own
+     to resolve a percentage against. */
+  width: clamp(64px, 17.5vw, 168px);
+  aspect-ratio: 3 / 1;
+  border: none;
   background: rgba(255, 255, 255, 0.12);
-  border: 2px solid rgba(255, 255, 255, 0.4);
   color: #fff;
   font-size: 24px;
   line-height: 1;
@@ -139,17 +148,26 @@ canvas {
   user-select: none;
   touch-action: none;
   padding: 0;
+  pointer-events: auto;
+}
+
+/* Arrow-shaped buttons via clip-path — flat back edge, single point at the
+   tip (pennant/tag shape), matching the reference plank's tapered ends.
+   Shape only, no texture/image. */
+#btnLeft {
+  clip-path: polygon(100% 0%, 100% 100%, 22% 100%, 0% 50%, 22% 0%);
+}
+
+#btnRight {
+  clip-path: polygon(0% 0%, 0% 100%, 78% 100%, 100% 50%, 78% 0%);
 }
 
 #btnJump {
-  width: 66px;
-  height: 66px;
-  font-size: 26px;
+  clip-path: polygon(0% 100%, 100% 100%, 100% 40%, 50% 0%, 0% 40%);
 }
 
 .touchBtn.active {
   background: rgba(255, 255, 255, 0.4);
-  border-color: #fff;
 }
 
 /* Show touch controls whenever the device reports a coarse (touch) pointer,

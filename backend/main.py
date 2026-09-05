@@ -142,6 +142,17 @@ def get_level(level_index: int, player_id: str | None = None) -> dict:
     meta = level_meta()[level_index]
     if meta["locked"]:
         raise HTTPException(status_code=403, detail="Nivel bloqueado")
+    unlocked = 1
+    if player_id:
+        with connect() as conn:
+            row = conn.execute(
+                "SELECT unlocked FROM progress WHERE player_id = ?",
+                (player_id,),
+            ).fetchone()
+        if row is not None:
+            unlocked = min(row["unlocked"], playable_level_count())
+    if level_index >= unlocked:
+        raise HTTPException(status_code=403, detail="Nivel bloqueado")
     return {
         "index": level_index,
         "total_levels": level_count(),
@@ -162,8 +173,8 @@ def get_progress(player_id: str) -> dict:
             (player_id,),
         ).fetchone()
     if row is None:
-        return {"player_id": player_id, "unlocked": playable_level_count()}
-    return {"player_id": row["player_id"], "unlocked": max(row["unlocked"], playable_level_count())}
+        return {"player_id": player_id, "unlocked": 1}
+    return {"player_id": row["player_id"], "unlocked": min(row["unlocked"], playable_level_count())}
 
 
 @app.post("/progress", response_model=ProgressOut)

@@ -3,6 +3,7 @@
 html, body {
   margin: 0;
   height: 100%;
+  overflow: hidden;
   background: #0c0a16;
   color: #f2eefc;
   font-family: 'VT323', monospace;
@@ -25,12 +26,27 @@ canvas, img {
 
 #wrap {
   position: relative;
+  overflow: hidden;
   /* Fits the 960x540 canvas (plus the ~70px of HUD/progress-bar chrome
      above it) into whichever dimension is tighter — viewport width (a
      narrow phone) or viewport height (a short/landscape window) — so the
      game scales to fill the screen instead of shrinking to the width
      alone and leaving the rest of a tall viewport empty. */
   width: min(960px, 100vw, calc((100vh - 70px) * (960 / 540)));
+  width: min(960px, 100vw, calc((100dvh - 70px) * (960 / 540)));
+  /* On a portrait phone the width limit above leaves #wrap much shorter
+     than the screen — without this, that leftover height is just bare
+     page background above/below a tiny floating box. Stretching #wrap to
+     full viewport height and centering the game column inside it means
+     the full-bleed menu screens (which are absolutely positioned to fill
+     #wrap) cover the whole phone screen instead. */
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 #canvasArea {
@@ -692,6 +708,7 @@ canvas {
 }
 .levelNode.locked {
   background:
+    repeating-linear-gradient(135deg, rgba(255,255,255,0.07) 0 4px, transparent 4px 9px),
     radial-gradient(circle at 32% 28%, rgba(255,255,255,0.18) 0 10%, transparent 11%),
     radial-gradient(circle at 50% 54%, #40395e 0 38%, #262139 68%, #171323 100%);
   color: #665f7a;
@@ -703,6 +720,15 @@ canvas {
     3px 3px 0 rgba(0,0,0,0.55);
   cursor: not-allowed;
   filter: grayscale(0.35);
+}
+.levelNode.locked::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  border: 2px dashed rgba(174,159,221,0.35);
+  box-shadow: inset 0 0 10px rgba(0,0,0,0.32);
+  pointer-events: none;
 }
 .levelNode.locked[data-badge]::before {
   content: attr(data-badge);

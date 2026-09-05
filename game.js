@@ -480,13 +480,14 @@ function buildLevelGrid() {
   for (let i = 0; i < count; i++) {
     const pos = positions[i];
     const meta = levelsMeta[i] || { name: 'Nivel ' + (i + 1) };
-    const locked = meta.locked;
+    const lockedByProgress = i >= unlockedLevels;
+    const locked = meta.locked || lockedByProgress;
     const isCurrent = !locked && i === unlockedLevels - 1;
     if (isCurrent) currentY = pos.y;
     const btn = document.createElement('button');
     btn.className = 'levelNode' + (locked ? ' locked' : '') + (isCurrent ? ' current' : '');
     btn.disabled = locked;
-    const label = meta.locked ? meta.name + ' - Proximamente' : meta.name;
+    const label = locked ? meta.name + ' - Bloqueado' : meta.name;
     btn.setAttribute('aria-label', label);
     btn.style.left = pos.x + '%';
     btn.style.top = pos.y + 'px';

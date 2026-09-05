@@ -27,30 +27,47 @@ canvas, img {
 #wrap {
   position: relative;
   overflow: hidden;
-  /* Fits the 960x540 canvas (plus the ~70px of HUD/progress-bar chrome
-     above it) into whichever dimension is tighter — viewport width (a
-     narrow phone) or viewport height (a short/landscape window) — so the
-     game scales to fill the screen instead of shrinking to the width
-     alone and leaving the rest of a tall viewport empty. */
-  width: min(960px, 100vw, calc((100vh - 70px) * (960 / 540)));
-  width: min(960px, 100vw, calc((100dvh - 70px) * (960 / 540)));
-  /* On a portrait phone the width limit above leaves #wrap much shorter
-     than the screen — without this, that leftover height is just bare
-     page background above/below a tiny floating box. Stretching #wrap to
-     full viewport height and centering the game column inside it means
-     the full-bleed menu screens (which are absolutely positioned to fill
-     #wrap) cover the whole phone screen instead. */
+  /* #wrap always spans the full viewport (capped at 960px wide so it
+     doesn't balloon on desktop) so the full-bleed menu screens — which are
+     absolutely positioned to fill #wrap — cover the whole phone screen
+     instead of floating in a tiny box surrounded by bare page background.
+     Sizing the actual game view (HUD + canvas) to fit inside that box is
+     handled below by flex + object-fit, not by guessing a pixel height
+     here — a guess breaks the moment the HUD wraps to a second row on a
+     short/wide landscape phone. */
+  width: min(960px, 100vw);
   height: 100vh;
   height: 100dvh;
-  max-height: 100vh;
-  max-height: 100dvh;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+}
+
+#hud, #progressTrack {
+  flex: none;
 }
 
 #canvasArea {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* The actual game "box": sized to the largest 16:9 rect that fits inside
+   whatever room #canvasArea has left (flex may give it far more height
+   than a 16:9 shape needs, e.g. a tall portrait phone), so canvas and its
+   overlays (touch controls, level-intro text) share one shrink-to-fit
+   frame and always land exactly on the visible game view — never
+   floating off in the empty space around it. */
+#canvasFrame {
   position: relative;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 960 / 540;
 }
 
 /* Studio splash — shown once on load, above absolutely everything else
@@ -125,9 +142,7 @@ canvas, img {
 canvas {
   display: block;
   width: 100%;
-  height: auto;
-  aspect-ratio: 960 / 540;
-  object-fit: contain;
+  height: 100%;
   background: #222;
   image-rendering: pixelated;
   border: 3px solid #444;
@@ -328,6 +343,11 @@ canvas {
   justify-content: center;
   gap: 16px;
   padding: 24px;
+  /* Safety net: on a short landscape phone the shrunk sizes below (and the
+     media query further down) should always make the content fit, but if
+     something still doesn't — a big text-zoom setting, an unusually tiny
+     window — scrolling beats silently clipping buttons off-screen. */
+  overflow-y: auto;
   background: radial-gradient(ellipse at center, #241d3d 0%, #120f1f 100%);
   border: 3px solid #000;
   box-shadow: inset 0 0 0 3px #4a3a70;
@@ -422,6 +442,41 @@ canvas {
 }
 
 .backBtn { margin-top: 12px; }
+
+/* A phone held sideways is wide but short (often well under 500px tall
+   once the browser chrome takes its cut) — the main menu's tagline + title
+   + 5 buttons at their normal size don't fit that height and get clipped
+   by #wrap's overflow. Shrink the menu chrome so it comfortably fits a
+   landscape phone screen instead of relying only on the overflow-y
+   safety net above. */
+@media (max-height: 480px) {
+  .screenOverlay {
+    gap: 8px;
+    padding: 10px 24px;
+  }
+  #mainMenuTagline {
+    font-size: clamp(14px, 5vh, 24px);
+  }
+  .screenOverlay h1 {
+    font-size: clamp(12px, 4vh, 20px);
+    margin: 0 0 4px;
+    line-height: 1.3;
+  }
+  .screenOverlay h2 {
+    margin: 0 0 4px;
+  }
+  .menuBtn {
+    padding: 7px 18px;
+    font-size: 11px;
+    min-width: 150px;
+  }
+  #infoMenuBtn {
+    padding: 5px 10px;
+    font-size: 7.5px;
+    min-width: 96px;
+  }
+  .backBtn { margin-top: 4px; }
+}
 
 /* ---------- Profile screen: login / register form ---------- */
 #authTabs {

@@ -17,6 +17,12 @@ html, body {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+  /* Blocks pinch-zoom, double-tap-zoom and pull-to-refresh gestures — this
+     is a full-screen game, not a document, so the page itself should never
+     pan or scale under a player's fingers. Paired with the
+     maximum-scale/user-scalable viewport meta tag, which alone isn't
+     enough on every mobile browser. */
+  touch-action: none;
 }
 
 canvas, img {
@@ -27,17 +33,18 @@ canvas, img {
 #wrap {
   position: relative;
   overflow: hidden;
-  /* #wrap always spans the full viewport (capped at 960px wide so it
-     doesn't balloon on desktop) so the full-bleed menu screens — which are
-     absolutely positioned to fill #wrap — cover the whole phone screen
-     instead of floating in a tiny box surrounded by bare page background.
-     Sizing the actual game view (HUD + canvas) to fit inside that box is
-     handled below by flex + object-fit, not by guessing a pixel height
-     here — a guess breaks the moment the HUD wraps to a second row on a
-     short/wide landscape phone. */
-  width: min(960px, 100vw);
-  height: 100vh;
-  height: 100dvh;
+  /* The whole app — menus included, not just the canvas — is a 16:9
+     window: shrink-to-fit the largest 960:540 box that fits the viewport,
+     the same aspect-ratio trick #canvasFrame uses below. Portrait phones
+     are turned away by #rotateHint before they'd ever see this box tiny
+     and letterboxed, so this can stay a true widescreen shape instead of
+     stretching to fill whatever the screen happens to be. */
+  width: auto;
+  height: auto;
+  max-width: min(960px, 100vw);
+  max-height: 100vh;
+  max-height: 100dvh;
+  aspect-ratio: 960 / 540;
   display: flex;
   flex-direction: column;
 }
@@ -68,6 +75,68 @@ canvas, img {
   max-width: 100%;
   max-height: 100%;
   aspect-ratio: 960 / 540;
+}
+
+/* Rotate-device gate — this is a landscape-only game, so a touch device
+   held in portrait gets told to turn it rather than being handed a
+   squeezed, letterboxed layout. Fixed (not tied to #wrap) so it always
+   covers the whole screen, above everything including the splash screen.
+   Pure CSS via the orientation media query below: no JS needed, and it
+   reacts instantly to the OS-level orientation change. */
+#rotateHint {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: 24px;
+  text-align: center;
+  background: #0c0a16;
+}
+
+#rotatePhone {
+  width: 42px;
+  height: 74px;
+  border: 4px solid #f2eefc;
+  border-radius: 8px;
+  position: relative;
+  animation: rotatePhoneHint 1.8s ease-in-out infinite;
+}
+#rotatePhone::after {
+  content: "";
+  position: absolute;
+  bottom: 7px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f2eefc;
+  transform: translateX(-50%);
+}
+@keyframes rotatePhoneHint {
+  0%, 15%   { transform: rotate(0deg); }
+  45%, 60%  { transform: rotate(-90deg); }
+  90%, 100% { transform: rotate(0deg); }
+}
+
+#rotateHint p {
+  margin: 0;
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(11px, 4vw, 15px);
+  color: #ffd166;
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.8), 0 0 16px rgba(255,209,102,0.55);
+  max-width: 260px;
+  line-height: 1.6;
+}
+
+@media (orientation: portrait) and (pointer: coarse) {
+  #rotateHint { display: flex; }
+  /* Nothing beneath needs its own hiding logic — #rotateHint is opaque,
+     fixed and top of the stack, so it fully blocks view and touch input
+     on the menus/game underneath until the phone is turned. */
 }
 
 /* Studio splash — shown once on load, above absolutely everything else
@@ -346,8 +415,11 @@ canvas {
   /* Safety net: on a short landscape phone the shrunk sizes below (and the
      media query further down) should always make the content fit, but if
      something still doesn't — a big text-zoom setting, an unusually tiny
-     window — scrolling beats silently clipping buttons off-screen. */
+     window — scrolling beats silently clipping buttons off-screen. Needs
+     its own touch-action (the page-wide touch-action:none that blocks
+     pinch-zoom would otherwise block this swipe-scroll too). */
   overflow-y: auto;
+  touch-action: pan-y;
   background: radial-gradient(ellipse at center, #241d3d 0%, #120f1f 100%);
   border: 3px solid #000;
   box-shadow: inset 0 0 0 3px #4a3a70;

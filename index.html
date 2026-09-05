@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
   <div id="wrap">
@@ -46,15 +46,22 @@
       <button id="playBtn" class="menuBtn">Jugar</button>
       <button id="mapMenuBtn" class="menuBtn">Niveles</button>
       <button id="optionsMenuBtn" class="menuBtn">Opciones</button>
+      <button id="infoMenuBtn" class="menuBtn">Info</button>
     </div>
 
     <div id="levelMap" class="screenOverlay" hidden>
       <h2>Selecciona un nivel</h2>
       <div id="mapCanvas">
+        <div class="mapStars"></div>
+        <div class="mapMist"></div>
         <div class="mapMountains mapMountainsFar"></div>
         <div class="mapMountains mapMountainsNear"></div>
-        <svg id="mapPath" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
-        <div id="levelGrid"></div>
+        <div id="mapScroll">
+          <div id="mapInner">
+            <svg id="mapPath"></svg>
+            <div id="levelGrid"></div>
+          </div>
+        </div>
       </div>
       <button class="menuBtn backBtn" data-close="levelMap">Volver</button>
     </div>
@@ -72,12 +79,27 @@
       <button id="menuFromOptionsBtn" class="menuBtn">Menu</button>
       <button class="menuBtn backBtn" data-close="optionsMenu">Volver</button>
     </div>
+
+    <div id="infoMenu" class="screenOverlay" hidden>
+      <h2>Info</h2>
+      <div id="infoContent">
+        <p><strong>Not A Troll Game</strong> es un plataformero de precision pixel-art donde cada salto, cada pausa y cada decision importan. Avanza por niveles llenos de trampas ocultas, pisos traicioneros, obstaculos sorpresa y rutas que parecen simples hasta que el juego decide ponerte a prueba. La clave no es solo correr: observa, aprende el patron, memoriza los peligros y vuelve a intentarlo hasta dominar cada pantalla.</p>
+        <p><strong>Controles</strong><br>
+        Flechas / A-D: moverse<br>
+        Espacio / Arriba: saltar<br>
+        R: reiniciar nivel<br>
+        Esc: abrir mapa de niveles</p>
+        <p><strong>Creditos</strong><br>Desarrollado por BFJ Studios</p>
+      </div>
+      <p id="infoCopyright">&copy; Todos los derechos son reservados y propiedad intelectual de BFJ GAMES PE</p>
+      <button class="menuBtn backBtn" data-close="infoMenu">Volver</button>
+    </div>
   </div>
   <script>
     window.API_BASE_URL = ['localhost', '127.0.0.1'].includes(location.hostname)
       ? 'http://127.0.0.1:8000'
       : '';
   </script>
-  <script src="game.min.js"></script>
+  <script src="game.min.js?v=9"></script>
 </body>
 </html>

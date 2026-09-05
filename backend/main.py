@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from levels import level_count, level_meta, shifted_level
+from levels import level_count, level_meta, playable_level_count, shifted_level
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -102,9 +102,12 @@ def health() -> dict[str, str]:
 
 
 @app.get("/levels/{level_index}")
-def get_level(level_index: int) -> dict:
+def get_level(level_index: int, player_id: str | None = None) -> dict:
     if level_index < 0 or level_index >= level_count():
         raise HTTPException(status_code=404, detail="Nivel no encontrado")
+    meta = level_meta()[level_index]
+    if meta["locked"]:
+        raise HTTPException(status_code=403, detail="Nivel bloqueado")
     return {
         "index": level_index,
         "total_levels": level_count(),
@@ -131,7 +134,7 @@ def get_progress(player_id: str) -> dict:
 
 @app.post("/progress", response_model=ProgressOut)
 def save_progress(progress: ProgressIn) -> dict:
-    unlocked = min(progress.unlocked, level_count())
+    unlocked = min(progress.unlocked, playable_level_count())
     now = datetime.now(timezone.utc).isoformat()
     with connect() as conn:
         row = conn.execute(

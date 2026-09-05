@@ -4,6 +4,11 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const W = canvas.width, H = canvas.height;
 
+const bgImage = new Image();
+let bgImageReady = false;
+bgImage.onload = () => { bgImageReady = true; };
+bgImage.src = 'recursos/FONDO_JUEGO.png';
+
 const levelLabel = document.getElementById('levelLabel');
 const deathLabel = document.getElementById('deathLabel');
 const overlayTitle = document.getElementById('overlayTitle');
@@ -14,22 +19,46 @@ document.getElementById('restartBtn').onclick = () => restartLevel();
 // ---------- Studio splash ----------
 const splashScreen = document.getElementById('splashScreen');
 let splashActive = true;
+const splashSound = new Audio('recursos/splash_inicio.mp3');
+splashSound.volume = 0.75;
+
+function playSplashSound() {
+  if (!splashActive || localStorage.getItem('notTrollSoundOn') === '0') return;
+  try {
+    splashSound.currentTime = 0;
+    splashSound.play().catch(() => {});
+  } catch (e) { /* autoplay can be blocked until the first gesture */ }
+}
+
 function dismissSplash() {
   if (!splashActive) return;
   splashActive = false;
+  // Let the sting finish playing even if the visual splash is skipped —
+  // stopping it here would cut it off the instant a click/keydown unlocks
+  // audio, since play() and this dismiss fire in the same handler.
   splashScreen.classList.add('fadeOut');
   setTimeout(() => { splashScreen.hidden = true; }, 650);
 }
+playSplashSound();
 setTimeout(dismissSplash, 2200);
-splashScreen.addEventListener('click', dismissSplash);
-window.addEventListener('keydown', dismissSplash, { once: true });
+splashScreen.addEventListener('click', () => {
+  playSplashSound();
+  dismissSplash();
+});
+window.addEventListener('keydown', () => {
+  playSplashSound();
+  dismissSplash();
+}, { once: true });
 
 // ---------- Menus (main menu, level map, options) ----------
 const mainMenu = document.getElementById('mainMenu');
 const levelMap = document.getElementById('levelMap');
 const optionsMenu = document.getElementById('optionsMenu');
+const infoMenu = document.getElementById('infoMenu');
 const levelGrid = document.getElementById('levelGrid');
 const mapPath = document.getElementById('mapPath');
+const mapScroll = document.getElementById('mapScroll');
+const mapInner = document.getElementById('mapInner');
 const soundToggleBtn = document.getElementById('soundToggleBtn');
 let paused = false;
 let soundOn = localStorage.getItem('notTrollSoundOn') !== '0';
@@ -87,6 +116,7 @@ const Sound = (() => {
     goal: () => { tone(523, 0.1, 'square', 0.15, 523); setTimeout(() => tone(659, 0.1, 'square', 0.15, 659), 90); setTimeout(() => tone(784, 0.22, 'square', 0.18, 784), 180); },
     pop: () => tone(200, 0.08, 'square', 0.1, 90),
     crumble: () => noise(0.15, 0.12),
+    boom: () => { tone(90, 0.3, 'sawtooth', 0.2, 40); noise(0.3, 0.22); },
     resume: () => ac(),
   };
 })();
@@ -125,6 +155,18 @@ musicToggleBtn.addEventListener('click', () => {
   applyMusicButtonLabel();
 });
 applyMusicButtonLabel();
+
+// Stop both tracks the moment the tab is closed/hidden/backgrounded — a
+// looping <audio> otherwise keeps playing (and keeps the tab "alive" in
+// some browsers) after the user navigates away or closes it.
+function stopAllMusic() {
+  bgMusic.pause();
+  menuMusic.pause();
+}
+window.addEventListener('pagehide', stopAllMusic);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopAllMusic();
+});
 
 // Checked every frame.
 function updateMusicPlayback() {
@@ -260,19 +302,29 @@ async function saveProgress(unlocked) {
   }
 }
 
-// Hand-tuned zigzag so the map reads as a winding trail rather than a grid.
-// Positions beyond the tuned set fall back to a procedural zigzag so the
-// map still works if more levels are added to the backend later.
-const MAP_LAYOUT = [
-  { x: 12, y: 88 }, { x: 30, y: 76 }, { x: 20, y: 60 },
-  { x: 38, y: 48 }, { x: 58, y: 56 }, { x: 74, y: 42 },
-  { x: 56, y: 28 }, { x: 38, y: 16 }, { x: 60, y: 8 },
-];
-function nodePosition(i) {
-  if (MAP_LAYOUT[i]) return MAP_LAYOUT[i];
-  const row = Math.floor(i / 2);
-  const leftSide = i % 2 === 0;
-  return { x: leftSide ? 15 + (row % 3) * 5 : 65 + (row % 3) * 5, y: Math.max(4, 88 - row * 9) };
+// Procedural zigzag so the map reads as a winding trail rather than a grid,
+// and always has consistent spacing no matter how many levels the backend
+// reports — no more hand-tuned per-level coordinates that go stale (and
+// collide) the moment a level is added or removed.
+// Level 1 sits near the bottom of the content; each next level climbs
+// higher, so a tall level list becomes a scrollable trail instead of a
+// cramped fixed box — the viewport auto-scrolls to reveal newly unlocked
+// levels as they're discovered.
+const MAP_NODE_STEP = 92;   // vertical px between consecutive levels — comfortably more than the node's max rendered size
+const MAP_TOP_PAD = 60;
+const MAP_BOTTOM_PAD = 70;
+
+function computeMapLayout(count, viewportH) {
+  const contentH = Math.max(viewportH, MAP_TOP_PAD + MAP_BOTTOM_PAD + Math.max(0, count - 1) * MAP_NODE_STEP);
+  const positions = [];
+  for (let i = 0; i < count; i++) {
+    const xPct = 50 + 30 * Math.sin(i * 0.85 + 0.6) + 9 * Math.sin(i * 2.3 + 1.4);
+    positions.push({
+      x: Math.min(86, Math.max(14, xPct)),
+      y: contentH - MAP_BOTTOM_PAD - i * MAP_NODE_STEP,
+    });
+  }
+  return { positions, contentH };
 }
 
 // Closed-padlock icon for locked map nodes — a plain line-art lock rather
@@ -284,11 +336,15 @@ const LOCK_ICON_SVG = '<svg viewBox="0 0 24 24" width="60%" height="60%" fill="n
   '<rect x="11.1" y="15.2" width="1.8" height="2.6" rx="0.5" fill="#9a8fc7"/>' +
   '</svg>';
 
-function drawMapPath(positions) {
+function drawMapPath(positions, width, contentH) {
+  mapPath.setAttribute('width', width);
+  mapPath.setAttribute('height', contentH);
+  mapPath.setAttribute('viewBox', `0 0 ${width} ${contentH}`);
   if (positions.length < 2) { mapPath.innerHTML = ''; return; }
-  const toD = pts => 'M ' + pts.map(p => p.x + ' ' + p.y).join(' L ');
+  const toD = pts => 'M ' + pts.map(p => (p.x / 100 * width) + ' ' + p.y).join(' L ');
   const traveledCount = Math.min(positions.length, Math.max(1, unlockedLevels));
   mapPath.innerHTML =
+    `<path d="${toD(positions)}" class="mapPathGlow"/>` +
     `<path d="${toD(positions)}" class="mapPathFull"/>` +
     `<path d="${toD(positions.slice(0, traveledCount))}" class="mapPathTraveled"/>`;
 }
@@ -296,21 +352,32 @@ function drawMapPath(positions) {
 function buildLevelGrid() {
   levelGrid.innerHTML = '';
   const count = levelsMeta.length || totalLevels || 1;
-  const positions = [];
+  const viewportW = mapScroll.clientWidth;
+  const viewportH = mapScroll.clientHeight;
+  const { positions, contentH } = computeMapLayout(count, viewportH);
+  mapInner.style.height = contentH + 'px';
+
+  let currentY = contentH;
   for (let i = 0; i < count; i++) {
-    const pos = nodePosition(i);
-    positions.push(pos);
+    const pos = positions[i];
     const meta = levelsMeta[i] || { name: 'Nivel ' + (i + 1) };
-    const locked = i >= unlockedLevels;
+    const locked = meta.locked;
     const isCurrent = !locked && i === unlockedLevels - 1;
+    if (isCurrent) currentY = pos.y;
     const btn = document.createElement('button');
     btn.className = 'levelNode' + (locked ? ' locked' : '') + (isCurrent ? ' current' : '');
     btn.disabled = locked;
-    btn.title = meta.name;
+    const label = meta.locked ? meta.name + ' - Proximamente' : meta.name;
+    btn.setAttribute('aria-label', label);
     btn.style.left = pos.x + '%';
-    btn.style.top = pos.y + '%';
-    if (locked) btn.innerHTML = LOCK_ICON_SVG;
-    else btn.textContent = String(i + 1);
+    btn.style.top = pos.y + 'px';
+    btn.dataset.level = String(i + 1);
+    if (locked) {
+      btn.innerHTML = LOCK_ICON_SVG;
+      if (meta.locked) btn.dataset.badge = 'PROX';
+    } else {
+      btn.textContent = String(i + 1);
+    }
     btn.addEventListener('click', () => {
       if (locked) return;
       closeAllScreens();
@@ -318,13 +385,71 @@ function buildLevelGrid() {
     });
     levelGrid.appendChild(btn);
   }
-  drawMapPath(positions);
+  drawMapPath(positions, viewportW, contentH);
+
+  // Reveal the current/frontier level by scrolling it toward the middle of
+  // the viewport, instead of dumping the player at the top of the trail.
+  mapScroll.scrollTop = Math.max(0, Math.min(contentH - viewportH, currentY - viewportH / 2));
 }
+
+// Drag-to-pan the level map instead of a visible scrollbar: press and hold
+// (mouse or touch), then move up/down to scroll. A click that moved past a
+// small threshold is treated as a drag and swallowed so it doesn't also
+// select the level node under the pointer.
+(function setupMapDrag() {
+  let dragging = false;
+  let moved = false;
+  let startY = 0;
+  let startScrollTop = 0;
+  let pointerId = null;
+
+  mapScroll.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    dragging = true;
+    moved = false;
+    startY = e.clientY;
+    startScrollTop = mapScroll.scrollTop;
+    pointerId = e.pointerId;
+  });
+
+  mapScroll.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const deltaY = e.clientY - startY;
+    if (!moved && Math.abs(deltaY) > 4) {
+      // Only now does this become an actual drag — capture the pointer so
+      // scrolling keeps tracking it past the container's edges. Capturing
+      // eagerly on every pointerdown instead would reroute the click event
+      // for a plain tap away from the level node under it, since the browser
+      // targets the synthesized click at the capturing element, not the
+      // node — silently swallowing every level selection.
+      moved = true;
+      mapScroll.classList.add('dragging');
+      mapScroll.setPointerCapture(pointerId);
+    }
+    if (moved) mapScroll.scrollTop = startScrollTop - deltaY;
+  });
+
+  function endDrag() {
+    dragging = false;
+    mapScroll.classList.remove('dragging');
+  }
+  mapScroll.addEventListener('pointerup', endDrag);
+  mapScroll.addEventListener('pointercancel', endDrag);
+
+  levelGrid.addEventListener('click', (e) => {
+    if (moved) {
+      e.stopPropagation();
+      e.preventDefault();
+      moved = false;
+    }
+  }, true);
+})();
 
 function showScreen(el) {
   mainMenu.hidden = true;
   levelMap.hidden = true;
   optionsMenu.hidden = true;
+  infoMenu.hidden = true;
   el.hidden = false;
   paused = true;
 }
@@ -333,24 +458,37 @@ function closeAllScreens() {
   mainMenu.hidden = true;
   levelMap.hidden = true;
   optionsMenu.hidden = true;
+  infoMenu.hidden = true;
   paused = false;
 }
 
 function openLevelMap() {
-  buildLevelGrid();
   showScreen(levelMap);
+  buildLevelGrid();
 }
 
 function openOptionsMenu() {
   showScreen(optionsMenu);
 }
 
-document.getElementById('playBtn').addEventListener('click', () => {
-  closeAllScreens();
-  loadLevel(Math.max(0, unlockedLevels - 1));
+function openInfoMenu() {
+  showScreen(infoMenu);
+}
+
+document.addEventListener('click', e => {
+  const btn = e.target.closest('#playBtn, #mapMenuBtn, #optionsMenuBtn, #infoMenuBtn');
+  if (!btn) return;
+  if (btn.id === 'playBtn') {
+    closeAllScreens();
+    loadLevel(Math.max(0, unlockedLevels - 1));
+  } else if (btn.id === 'mapMenuBtn') {
+    openLevelMap();
+  } else if (btn.id === 'optionsMenuBtn') {
+    openOptionsMenu();
+  } else if (btn.id === 'infoMenuBtn') {
+    openInfoMenu();
+  }
 });
-document.getElementById('mapMenuBtn').addEventListener('click', openLevelMap);
-document.getElementById('optionsMenuBtn').addEventListener('click', openOptionsMenu);
 document.getElementById('mapBtn').addEventListener('click', () => { if (level) openLevelMap(); });
 document.getElementById('optionsBtn').addEventListener('click', () => { if (level) openOptionsMenu(); });
 document.getElementById('menuFromOptionsBtn').addEventListener('click', () => showScreen(mainMenu));
@@ -417,7 +555,7 @@ async function fetchLevel(index) {
   if (!API_BASE_URL) {
     throw new Error('Configura window.API_BASE_URL para cargar niveles desde el backend.');
   }
-  const res = await fetch(API_BASE_URL + '/levels/' + index);
+  const res = await fetch(API_BASE_URL + '/levels/' + index + '?player_id=' + encodeURIComponent(PLAYER_ID));
   if (!res.ok) throw new Error('No se pudo cargar el nivel.');
   return res.json();
 }
@@ -427,10 +565,12 @@ let levelIndex = 0;
 let totalLevels = 0;
 let level, player, camX, camTarget, deaths, totalDeaths, particles, stars, shake, portalMotes;
 let saws = [], wallSpikes = [], platformState = [];
+let fallingBlocks = [], bombs = [], teleporters = [], runWall = null;
 let state = 'menu'; // menu | intro | playing | dead | complete
 let stateTimer = 0;
 let flash = 0; // full-screen flash overlay alpha, decays each frame
 let portalCenter = null, pullStart = null, completeDuration = 1.1;
+let advancingLevel = false;
 camX = 0;
 deaths = 0;
 totalDeaths = 0;
@@ -440,6 +580,7 @@ shake = { t: 0, mag: 0 };
 
 async function loadLevel(i) {
   try {
+    advancingLevel = false;
     state = 'loading';
     overlayTitle.textContent = 'Cargando...';
     overlaySub.textContent = '';
@@ -458,6 +599,7 @@ async function loadLevel(i) {
     resetEntities();
     showIntro();
   } catch (e) {
+    advancingLevel = false;
     state = 'error';
     levelLabel.textContent = 'API requerida';
     deathLabel.textContent = 'Muertes: 0';
@@ -467,6 +609,24 @@ async function loadLevel(i) {
     overlaySub.classList.add('show');
     console.error(e);
   }
+}
+
+async function advanceAfterComplete() {
+  if (advancingLevel) return;
+  advancingLevel = true;
+  const next = levelIndex + 1;
+  const nextMeta = levelsMeta[next];
+  const reachedEnd = next >= totalLevels || (nextMeta && nextMeta.locked);
+  if (reachedEnd) {
+    await submitFinalScore();
+    await saveProgress(Math.min(totalLevels, unlockedLevels));
+    await loadLevel(0);
+    return;
+  }
+  if (next + 1 > unlockedLevels) {
+    await saveProgress(next + 1);
+  }
+  await loadLevel(next);
 }
 
 function makePortalMotes() {
@@ -513,6 +673,7 @@ function resetEntities() {
     squashX: 1, squashY: 1,
     animTime: 0,
     rotation: 0,
+    teleportCooldown: 0,
   };
   camX = player.x - W / 2;
   camTarget = camX;
@@ -537,6 +698,17 @@ function resetEntities() {
       fallVy: 0,
     };
   });
+  fallingBlocks = (level.fallingBlocks || []).map(b => ({ ...b, state: 'idle', t: 0, curY: b.y, vy: 0, gone: false }));
+  bombs = (level.bombs || []).map(b => ({
+    ...b,
+    state: 'idle', t: 0,
+    curX: b.kind === 'side' ? b.fromX : b.x,
+    curY: b.y,
+    vy: 0,
+    gone: false,
+  }));
+  teleporters = (level.teleporters || []).map(tp => ({ ...tp }));
+  runWall = level.runWall ? { ...level.runWall, x: level.runWall.startX } : null;
 }
 
 function restartLevel() {
@@ -668,15 +840,7 @@ function update(dt) {
     updateParticles(dt);
     stateTimer -= dt;
     if (stateTimer <= 0) {
-      const next = levelIndex + 1;
-      if (next >= totalLevels) {
-        submitFinalScore();
-        saveProgress(totalLevels);
-        loadLevel(0);
-      } else {
-        if (next + 1 > unlockedLevels) saveProgress(next + 1);
-        loadLevel(next);
-      }
+      advanceAfterComplete();
     }
     return;
   }
@@ -692,6 +856,10 @@ function update(dt) {
   updateTraps(dt);
   updateSaws(dt);
   updateWallSpikes(dt);
+  updateFallingBlocks(dt);
+  updateBombs(dt);
+  updateTeleporters(dt);
+  updateRunWall(dt);
   updateParticles(dt);
   checkHazards();
   checkGoal();
@@ -815,6 +983,10 @@ function resolveCollisions(axis) {
           p.triggered = true;
           p.t = 0;
         }
+        if (p.type === 'hidden_bomb' && !p.triggered) {
+          p.triggered = true;
+          p.t = 0;
+        }
       } else if (player.vy < 0) {
         player.y = p.y + p.h;
         player.vy = 0;
@@ -858,6 +1030,27 @@ function updateTraps(dt) {
         });
       }
     }
+    if (p.type === 'hidden_bomb') {
+      if (!p.triggered && p.triggerX !== undefined && player.x + player.w > p.triggerX) {
+        p.triggered = true;
+        p.t = 0;
+      }
+      if (p.triggered && !p.gone) {
+        p.t += dt;
+        if (p.t >= p.delay) {
+          p.gone = true;
+          const cx = p.x + p.w / 2, cy = p.y;
+          const dist = Math.hypot((player.x + player.w / 2) - cx, (player.y + player.h / 2) - cy);
+          if (!player.dead && dist < (p.blastRadius || 70)) killPlayer('bomb');
+          addShake(7, 0.3);
+          flash = Math.max(flash, 0.35);
+          Sound.boom();
+          spawnBurst(cx, cy, 18, {
+            color: '#ffb347', size: 6, life: 0.5, maxLife: 0.5, speedRange: 320, gravity: 700, type: 'spark',
+          });
+        }
+      }
+    }
     // Fake floor: the moment the player actually falls through it, the
     // block itself drops away too instead of just sitting there — sells
     // the "the floor was never real" gag instead of the player silently
@@ -899,6 +1092,114 @@ function updateWallSpikes(dt) {
       w.extend = progress * (w.reach || 90);
     }
   }
+}
+
+function updateFallingBlocks(dt) {
+  for (const b of fallingBlocks) {
+    if (b.gone) continue;
+    if (b.state === 'idle') {
+      if (player.x + player.w > b.triggerX) { b.state = 'warn'; b.t = 0; }
+    } else if (b.state === 'warn') {
+      b.t += dt;
+      if (b.t >= b.delay) { b.state = 'falling'; b.vy = 60; }
+    } else if (b.state === 'falling') {
+      b.vy += 2200 * dt;
+      b.curY += b.vy * dt;
+      if (!player.dead && overlap(player, rect(b.x, b.curY, b.w, b.h))) killPlayer('crush');
+      if (b.curY + b.h >= b.groundY) {
+        b.curY = b.groundY - b.h;
+        b.state = 'landed';
+        b.t = 0;
+        addShake(6, 0.25);
+        Sound.boom();
+        spawnBurst(b.x + b.w / 2, b.groundY, 14, {
+          color: '#8b5a2b', size: 6, life: 0.5, maxLife: 0.5, speedRange: 220, gravity: 900, type: 'debris',
+        });
+      }
+    } else if (b.state === 'landed') {
+      b.t += dt;
+      if (b.t > 0.6) b.gone = true;
+    }
+  }
+}
+
+function updateBombs(dt) {
+  for (const b of bombs) {
+    if (b.gone) continue;
+    if (b.state === 'idle') {
+      if (player.x + player.w > b.triggerX) { b.state = 'warn'; b.t = 0; }
+    } else if (b.state === 'warn') {
+      b.t += dt;
+      if (b.t >= b.delay) {
+        b.state = 'active';
+        if (b.kind === 'sky') { b.curY = b.y; b.vy = 40; }
+      }
+    } else if (b.state === 'active') {
+      if (b.kind === 'sky') {
+        b.vy += 2000 * dt;
+        b.curY += b.vy * dt;
+        const dx = (player.x + player.w / 2) - b.x;
+        const dy = (player.y + player.h / 2) - b.curY;
+        if (!player.dead && Math.hypot(dx, dy) < b.radius) killPlayer('bomb');
+        if (b.curY >= b.groundY) {
+          const bdx = (player.x + player.w / 2) - b.x;
+          const bdy = (player.y + player.h / 2) - b.groundY;
+          if (!player.dead && Math.hypot(bdx, bdy) < (b.blastRadius || b.radius * 1.8)) killPlayer('bomb');
+          addShake(7, 0.3);
+          flash = Math.max(flash, 0.35);
+          Sound.boom();
+          spawnBurst(b.x, b.groundY, 20, {
+            color: '#ffb347', size: 6, life: 0.5, maxLife: 0.5, speedRange: 340, gravity: 600, type: 'spark',
+          });
+          b.gone = true;
+        }
+      } else {
+        b.curX += b.speed * b.dir * dt;
+        const dx = (player.x + player.w / 2) - b.curX;
+        const dy = (player.y + player.h / 2) - b.y;
+        if (!player.dead && Math.hypot(dx, dy) < b.radius) {
+          killPlayer('bomb');
+          addShake(7, 0.3);
+          flash = Math.max(flash, 0.35);
+          Sound.boom();
+          spawnBurst(b.curX, b.y, 20, {
+            color: '#ffb347', size: 6, life: 0.5, maxLife: 0.5, speedRange: 340, gravity: 300, type: 'spark',
+          });
+          b.gone = true;
+        }
+        const outOfBounds = b.dir === 1 ? b.curX > b.toX : b.curX < b.toX;
+        if (outOfBounds) b.gone = true;
+      }
+    }
+  }
+}
+
+function updateTeleporters(dt) {
+  if (player.teleportCooldown > 0) { player.teleportCooldown -= dt; return; }
+  for (const tp of teleporters) {
+    if (overlap(player, tp)) {
+      spawnBurst(player.x + player.w / 2, player.y + player.h / 2, 14, {
+        color: '#8fe9ff', size: 5, life: 0.4, maxLife: 0.4, speedRange: 260, gravity: 0, type: 'spark',
+      });
+      player.x = tp.toX;
+      player.y = tp.toY;
+      player.vx = 0;
+      player.vy = 0;
+      spawnBurst(player.x + player.w / 2, player.y + player.h / 2, 14, {
+        color: '#c9a4ff', size: 5, life: 0.4, maxLife: 0.4, speedRange: 260, gravity: 0, type: 'spark',
+      });
+      player.teleportCooldown = 0.35;
+      addShake(2, 0.15);
+      Sound.pop();
+      break;
+    }
+  }
+}
+
+function updateRunWall(dt) {
+  if (!runWall) return;
+  runWall.x += runWall.speed * dt;
+  if (!player.dead && player.x < runWall.x) killPlayer('crush');
 }
 
 function updateParticles(dt) {
@@ -959,6 +1260,10 @@ function render() {
   if (level && player) {
     drawPlatforms();
     drawHazardsStatic();
+    drawRunWall();
+    drawTeleporters();
+    drawFallingBlocks();
+    drawBombs();
     drawSaws();
     drawWallSpikes();
     drawGoal();
@@ -976,14 +1281,18 @@ function render() {
 }
 
 function drawBackground() {
-  const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#171a33');
-  g.addColorStop(0.6, '#2b2246');
-  g.addColorStop(1, '#3a2a4d');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
+  if (bgImageReady) {
+    ctx.drawImage(bgImage, 0, 0, W, H);
+  } else {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#171a33');
+    g.addColorStop(0.6, '#2b2246');
+    g.addColorStop(1, '#3a2a4d');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
 
-  // stars (far parallax layer)
+  // stars (far parallax layer) — kept as a subtle overlay for depth on top of the art
   const t = performance.now() / 500;
   ctx.fillStyle = '#fff';
   for (const s of stars) {
@@ -995,26 +1304,6 @@ function drawBackground() {
     ctx.fill();
   }
   ctx.globalAlpha = 1;
-
-  // distant mountains (slow parallax)
-  drawParallaxRidge(camX * 0.3, H * 0.62, 140, '#241b3d');
-  // closer hills (medium parallax)
-  drawParallaxRidge(camX * 0.55, H * 0.72, 90, '#2f2350');
-}
-
-function drawParallaxRidge(offset, baseY, amp, color) {
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(0, H);
-  const step = 80;
-  for (let x = -step; x <= W + step; x += step) {
-    const worldX = x + offset;
-    const y = baseY - Math.abs(Math.sin(worldX * 0.004)) * amp - Math.abs(Math.cos(worldX * 0.0021)) * amp * 0.5;
-    ctx.lineTo(x, y);
-  }
-  ctx.lineTo(W, H);
-  ctx.closePath();
-  ctx.fill();
 }
 
 function drawVignette() {
@@ -1158,6 +1447,123 @@ function drawWallSpikes() {
     const bx = w.dir === 1 ? w.x : w.x - w.extend;
     ctx.fillRect(bx, w.y, w.extend, w.h);
   }
+}
+
+function drawFallingBlocks() {
+  for (const b of fallingBlocks) {
+    if (b.gone) continue;
+    if (b.state === 'warn') {
+      const pulse = 0.4 + Math.sin(performance.now() / 90) * 0.3;
+      ctx.fillStyle = `rgba(255,80,80,${0.25 + pulse * 0.25})`;
+      ctx.beginPath();
+      ctx.ellipse(b.x + b.w / 2, b.groundY - 4, b.w * 0.55, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(255,60,60,${0.6 + pulse * 0.4})`;
+      ctx.font = 'bold 20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('!', b.x + b.w / 2, b.groundY - 20);
+      ctx.textAlign = 'start';
+      continue;
+    }
+    if (b.state === 'falling' || b.state === 'landed') {
+      ctx.fillStyle = '#6b4a2b';
+      ctx.fillRect(b.x, b.curY, b.w, b.h);
+      ctx.fillStyle = '#8b5a2b';
+      ctx.fillRect(b.x + 4, b.curY + 4, b.w - 8, b.h - 8);
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(b.x + 3, b.curY + 3, b.w - 6, b.h - 6);
+    }
+  }
+}
+
+function drawBombIcon(x, y, r) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(r * 0.3, -r * 0.8);
+  ctx.lineTo(r * 0.7, -r * 1.4);
+  ctx.stroke();
+  ctx.fillStyle = '#ffb347';
+  ctx.beginPath();
+  ctx.arc(r * 0.7, -r * 1.4, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawBombs() {
+  for (const b of bombs) {
+    if (b.gone) continue;
+    if (b.state === 'warn') {
+      const pulse = 0.4 + Math.sin(performance.now() / 90) * 0.3;
+      if (b.kind === 'sky') {
+        ctx.fillStyle = `rgba(255,140,50,${0.25 + pulse * 0.25})`;
+        ctx.beginPath();
+        ctx.ellipse(b.x, b.groundY - 4, 34, 9, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        const wx = b.dir === 1 ? camX + 26 : camX + W - 26;
+        ctx.fillStyle = `rgba(255,140,50,${0.5 + pulse * 0.5})`;
+        ctx.beginPath();
+        ctx.moveTo(wx, b.y - 14);
+        ctx.lineTo(wx + (b.dir === 1 ? 16 : -16), b.y);
+        ctx.lineTo(wx, b.y + 14);
+        ctx.closePath();
+        ctx.fill();
+      }
+      continue;
+    }
+    if (b.state === 'active') {
+      drawBombIcon(b.kind === 'sky' ? b.x : b.curX, b.kind === 'sky' ? b.curY : b.y, 14);
+    }
+  }
+}
+
+function drawTeleporters() {
+  const t = performance.now() / 500;
+  for (const tp of teleporters) {
+    const cx = tp.x + tp.w / 2, cy = tp.y + tp.h / 2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(t);
+    ctx.strokeStyle = 'rgba(143,233,255,0.8)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, tp.w / 2, tp.h / 2, 0, 0, Math.PI * 1.5);
+    ctx.stroke();
+    ctx.restore();
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = 'rgba(143,233,255,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, tp.w / 2, tp.h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawRunWall() {
+  if (!runWall) return;
+  const fadeStart = Math.max(0, runWall.x - 120);
+  const g = ctx.createLinearGradient(fadeStart, 0, runWall.x, 0);
+  g.addColorStop(0, 'rgba(10,6,20,0)');
+  g.addColorStop(1, 'rgba(10,6,20,0.95)');
+  ctx.fillStyle = g;
+  ctx.fillRect(fadeStart, runWall.y, runWall.x - fadeStart, runWall.h);
+  ctx.fillStyle = '#0a0614';
+  ctx.fillRect(0, runWall.y, fadeStart, runWall.h);
+  ctx.strokeStyle = 'rgba(178,102,255,0.5)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(runWall.x, runWall.y);
+  ctx.lineTo(runWall.x, runWall.y + runWall.h);
+  ctx.stroke();
 }
 
 function drawGoal() {

@@ -25,8 +25,12 @@ canvas, img {
 
 #wrap {
   position: relative;
-  width: 960px;
-  max-width: 100vw;
+  /* Fits the 960x540 canvas (plus the ~70px of HUD/progress-bar chrome
+     above it) into whichever dimension is tighter — viewport width (a
+     narrow phone) or viewport height (a short/landscape window) — so the
+     game scales to fill the screen instead of shrinking to the width
+     alone and leaving the rest of a tall viewport empty. */
+  width: min(960px, 100vw, calc((100vh - 70px) * (960 / 540)));
 }
 
 #canvasArea {
@@ -116,15 +120,16 @@ canvas {
 
 #hud {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 8px 14px;
   padding: 10px 4px;
   font-family: 'Press Start 2P', monospace;
-  font-size: 11px;
+  font-size: clamp(9px, 2.2vw, 11px);
   letter-spacing: 0.5px;
 }
 
-#levelLabel { font-size: 12px; color: #ffd166; }
+#levelLabel { font-size: 1.1em; color: #ffd166; }
 #deathLabel { color: #ff6b6b; }
 
 #restartBtn {
@@ -228,6 +233,11 @@ canvas {
   touch-action: none;
   padding: 0;
   pointer-events: auto;
+  transform: translateY(-8%);
+}
+
+#btnJump {
+  width: clamp(77px, 21vw, 202px);
 }
 
 /* Arrow-shaped buttons via clip-path — flat back edge, single point at the
@@ -342,21 +352,21 @@ canvas {
 }
 
 #mainMenuTagline {
-  position: absolute;
-  top: 16%;
-  left: 50%;
-  transform: translateX(-50%);
+  /* Part of the normal flex flow now (not an absolute overlay pinned to a
+     % of the menu's height) so it can never drift into overlapping the
+     title below it once either line wraps or shrinks on a narrow screen. */
   font-family: 'Press Start 2P', monospace;
-  font-size: 42px;
-  letter-spacing: 4px;
+  font-size: clamp(20px, 6vw, 42px);
+  letter-spacing: clamp(1px, 0.8vw, 4px);
   color: #ff5757;
   text-shadow: 5px 5px 0 rgba(0,0,0,0.6), 0 0 24px rgba(255, 87, 87, 0.6);
   white-space: nowrap;
+  margin: 0;
 }
 
 .screenOverlay h1 {
   font-family: 'Press Start 2P', monospace;
-  font-size: 30px;
+  font-size: clamp(16px, 5vw, 30px);
   line-height: 1.5;
   margin: 0 0 14px;
   color: #fff;
@@ -366,7 +376,7 @@ canvas {
 
 .screenOverlay h2 {
   font-family: 'Press Start 2P', monospace;
-  font-size: 16px;
+  font-size: clamp(12px, 4vw, 16px);
   line-height: 1.6;
   margin: 0 0 10px;
   color: #ffd166;
@@ -379,7 +389,108 @@ canvas {
   min-width: 190px;
 }
 
+/* Deliberately the runt of the main menu so it doesn't compete for
+   attention — Info isn't a page we want people visiting often. */
+#infoMenuBtn {
+  padding: 8px 14px;
+  font-size: 8.5px;
+  min-width: 124px;
+  border-width: 1px;
+  box-shadow: 2px 2px 0 #000;
+}
+#infoMenuBtn:hover:not(:disabled) {
+  box-shadow: 2.5px 2.5px 0 #000;
+}
+#infoMenuBtn:active:not(:disabled) {
+  box-shadow: 0.5px 0.5px 0 #000;
+}
+
 .backBtn { margin-top: 12px; }
+
+/* ---------- Profile screen: login / register form ---------- */
+#authTabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.authTab {
+  min-width: 0;
+  padding: 8px 14px;
+  font-size: 10px;
+  opacity: 0.6;
+}
+.authTab.active {
+  opacity: 1;
+  background: #3a2e5e;
+  box-shadow: inset 0 0 0 2px #ffd166, 4px 4px 0 #000;
+}
+
+#authForm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(320px, 80vw);
+}
+
+.formRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+.formRow label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  color: #ffd166;
+}
+.formRow input {
+  font-family: 'VT323', monospace;
+  font-size: 20px;
+  padding: 8px 10px;
+  background: #17132a;
+  color: #f2eefc;
+  border: 2px solid #000;
+  box-shadow: inset 0 0 0 2px #4a3a70;
+  border-radius: 0;
+}
+.formRow input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 2px #ffd166;
+}
+
+#authForm .menuBtn {
+  align-self: center;
+  margin-top: 4px;
+}
+
+.authError {
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  color: #ff6b6b;
+  text-align: left;
+}
+
+#profileLoggedIn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+#profileLoggedIn[hidden] {
+  display: none;
+}
+#profileWelcome {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 13px;
+  color: #ffd166;
+  margin: 0;
+}
+.profileHint {
+  font-size: 18px;
+  color: #cabde8;
+  margin: 0;
+  max-width: min(360px, 80vw);
+}
 
 #infoContent {
   max-width: min(480px, 80vw);
@@ -642,6 +753,6 @@ canvas {
 #hud .menuBtn {
   min-width: 0;
   padding: 8px 12px;
-  font-size: 10px;
+  font-size: clamp(8px, 2vw, 10px);
 }
 #mapBtn { margin-left: auto; }

@@ -4,10 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Not A Troll Game</title>
+<link rel="icon" type="image/png" href="recursos/logo.png?v=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
   <div id="wrap">
@@ -46,6 +47,7 @@
       <button id="playBtn" class="menuBtn">Jugar</button>
       <button id="mapMenuBtn" class="menuBtn">Niveles</button>
       <button id="optionsMenuBtn" class="menuBtn">Opciones</button>
+      <button id="profileMenuBtn" class="menuBtn">Perfil</button>
       <button id="infoMenuBtn" class="menuBtn">Info</button>
     </div>
 
@@ -80,6 +82,34 @@
       <button class="menuBtn backBtn" data-close="optionsMenu">Volver</button>
     </div>
 
+    <div id="profileMenu" class="screenOverlay" hidden>
+      <h2>Perfil</h2>
+      <div id="profileLoggedOut">
+        <div id="authTabs">
+          <button id="authTabLogin" class="menuBtn authTab active" type="button">Iniciar sesion</button>
+          <button id="authTabRegister" class="menuBtn authTab" type="button">Crear cuenta</button>
+        </div>
+        <form id="authForm">
+          <div class="formRow">
+            <label for="authEmail">Correo</label>
+            <input id="authEmail" name="email" type="email" autocomplete="email" maxlength="254" required>
+          </div>
+          <div class="formRow">
+            <label for="authPassword">Contrasena</label>
+            <input id="authPassword" name="password" type="password" autocomplete="current-password" maxlength="72" required>
+          </div>
+          <div id="authError" class="authError" hidden></div>
+          <button id="authSubmitBtn" class="menuBtn" type="submit">Iniciar sesion</button>
+        </form>
+      </div>
+      <div id="profileLoggedIn" hidden>
+        <p id="profileWelcome"></p>
+        <p class="profileHint">Tu progreso se guarda en la nube con esta cuenta.</p>
+        <button id="logoutBtn" class="menuBtn">Cerrar sesion</button>
+      </div>
+      <button class="menuBtn backBtn" data-close="profileMenu">Volver</button>
+    </div>
+
     <div id="infoMenu" class="screenOverlay" hidden>
       <h2>Info</h2>
       <div id="infoContent">
@@ -98,8 +128,8 @@
   <script>
     window.API_BASE_URL = ['localhost', '127.0.0.1'].includes(location.hostname)
       ? 'http://127.0.0.1:8000'
-      : '';
+      : 'https://candle-chose-peak-bride.trycloudflare.com';
   </script>
-  <script src="game.min.js?v=9"></script>
+  <script src="game.min.js?v=12"></script>
 </body>
 </html>

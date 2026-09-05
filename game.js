@@ -54,6 +54,7 @@ window.addEventListener('keydown', () => {
 const mainMenu = document.getElementById('mainMenu');
 const levelMap = document.getElementById('levelMap');
 const optionsMenu = document.getElementById('optionsMenu');
+const profileMenu = document.getElementById('profileMenu');
 const infoMenu = document.getElementById('infoMenu');
 const levelGrid = document.getElementById('levelGrid');
 const mapPath = document.getElementById('mapPath');
@@ -269,7 +270,28 @@ function getPlayerId() {
   }
   return id;
 }
-const PLAYER_ID = getPlayerId();
+
+function getAccount() {
+  try {
+    const raw = localStorage.getItem('notTrollAccount');
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function setAccountSession(account) {
+  localStorage.setItem('notTrollAccount', JSON.stringify(account));
+  PLAYER_ID = account.player_id;
+}
+
+function clearAccountSession() {
+  localStorage.removeItem('notTrollAccount');
+  PLAYER_ID = getPlayerId();
+}
+
+const account0 = getAccount();
+let PLAYER_ID = account0 ? account0.player_id : getPlayerId();
 let unlockedLevels = 1;
 let levelsMeta = [];
 
@@ -301,6 +323,103 @@ async function saveProgress(unlocked) {
     console.warn('No se pudo guardar el progreso.', e);
   }
 }
+
+// ---------- Profile: login / register, backed by the same progress API ----------
+const authForm = document.getElementById('authForm');
+const authEmail = document.getElementById('authEmail');
+const authPassword = document.getElementById('authPassword');
+const authError = document.getElementById('authError');
+const authSubmitBtn = document.getElementById('authSubmitBtn');
+const authTabLogin = document.getElementById('authTabLogin');
+const authTabRegister = document.getElementById('authTabRegister');
+const profileLoggedOut = document.getElementById('profileLoggedOut');
+const profileLoggedIn = document.getElementById('profileLoggedIn');
+const profileWelcome = document.getElementById('profileWelcome');
+let authMode = 'login';
+
+function setAuthMode(mode) {
+  authMode = mode;
+  authTabLogin.classList.toggle('active', mode === 'login');
+  authTabRegister.classList.toggle('active', mode === 'register');
+  authSubmitBtn.textContent = mode === 'login' ? 'Iniciar sesion' : 'Crear cuenta';
+  authPassword.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+  authError.hidden = true;
+}
+
+authTabLogin.addEventListener('click', () => setAuthMode('login'));
+authTabRegister.addEventListener('click', () => setAuthMode('register'));
+
+function refreshProfileScreen() {
+  const account = getAccount();
+  if (account) {
+    profileLoggedOut.hidden = true;
+    profileLoggedIn.hidden = false;
+    profileWelcome.textContent = 'Sesion iniciada como ' + account.email;
+  } else {
+    profileLoggedOut.hidden = false;
+    profileLoggedIn.hidden = true;
+    authForm.reset();
+    authError.hidden = true;
+    setAuthMode('login');
+  }
+}
+
+async function applyLoggedInProgress(account) {
+  const localUnlocked = unlockedLevels;
+  setAccountSession(account);
+  try {
+    const progress = await fetchProgress();
+    unlockedLevels = Math.max(progress.unlocked, localUnlocked);
+  } catch (e) {
+    unlockedLevels = localUnlocked;
+  }
+  await saveProgress(unlockedLevels);
+  buildLevelGrid();
+}
+
+authForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!API_BASE_URL) {
+    authError.textContent = 'Backend no configurado.';
+    authError.hidden = false;
+    return;
+  }
+  const email = authEmail.value.trim();
+  const password = authPassword.value;
+  authSubmitBtn.disabled = true;
+  authError.hidden = true;
+  try {
+    const endpoint = authMode === 'login' ? '/auth/login' : '/auth/register';
+    const res = await fetch(API_BASE_URL + endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      authError.textContent = data.detail || 'No se pudo completar la operacion.';
+      authError.hidden = false;
+      return;
+    }
+    await applyLoggedInProgress(data);
+    refreshProfileScreen();
+  } catch (err) {
+    authError.textContent = 'No se pudo conectar con el servidor.';
+    authError.hidden = false;
+  } finally {
+    authSubmitBtn.disabled = false;
+  }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  clearAccountSession();
+  unlockedLevels = 1;
+  fetchProgress().then(progress => {
+    unlockedLevels = progress.unlocked;
+    buildLevelGrid();
+  }).catch(() => {});
+  refreshProfileScreen();
+});
 
 // Procedural zigzag so the map reads as a winding trail rather than a grid,
 // and always has consistent spacing no matter how many levels the backend
@@ -449,6 +568,7 @@ function showScreen(el) {
   mainMenu.hidden = true;
   levelMap.hidden = true;
   optionsMenu.hidden = true;
+  profileMenu.hidden = true;
   infoMenu.hidden = true;
   el.hidden = false;
   paused = true;
@@ -458,6 +578,7 @@ function closeAllScreens() {
   mainMenu.hidden = true;
   levelMap.hidden = true;
   optionsMenu.hidden = true;
+  profileMenu.hidden = true;
   infoMenu.hidden = true;
   paused = false;
 }
@@ -471,12 +592,17 @@ function openOptionsMenu() {
   showScreen(optionsMenu);
 }
 
+function openProfileMenu() {
+  showScreen(profileMenu);
+  refreshProfileScreen();
+}
+
 function openInfoMenu() {
   showScreen(infoMenu);
 }
 
 document.addEventListener('click', e => {
-  const btn = e.target.closest('#playBtn, #mapMenuBtn, #optionsMenuBtn, #infoMenuBtn');
+  const btn = e.target.closest('#playBtn, #mapMenuBtn, #optionsMenuBtn, #profileMenuBtn, #infoMenuBtn');
   if (!btn) return;
   if (btn.id === 'playBtn') {
     closeAllScreens();
@@ -485,6 +611,8 @@ document.addEventListener('click', e => {
     openLevelMap();
   } else if (btn.id === 'optionsMenuBtn') {
     openOptionsMenu();
+  } else if (btn.id === 'profileMenuBtn') {
+    openProfileMenu();
   } else if (btn.id === 'infoMenuBtn') {
     openInfoMenu();
   }
@@ -674,6 +802,9 @@ function resetEntities() {
     animTime: 0,
     rotation: 0,
     teleportCooldown: 0,
+    groundType: null,
+    groundPlatform: null,
+    bounced: false,
   };
   camX = player.x - W / 2;
   camTarget = camX;
@@ -696,6 +827,9 @@ function resetEntities() {
       shardsSpawned: false,
       falling: false,
       fallVy: 0,
+      dir: 1,
+      baseX: p.x,
+      baseY: p.y,
     };
   });
   fallingBlocks = (level.fallingBlocks || []).map(b => ({ ...b, state: 'idle', t: 0, curY: b.y, vy: 0, gone: false }));
@@ -854,6 +988,7 @@ function update(dt) {
   // state === 'playing'
   updatePlayer(dt);
   updateTraps(dt);
+  updateMovingPlatforms(dt);
   updateSaws(dt);
   updateWallSpikes(dt);
   updateFallingBlocks(dt);
@@ -882,7 +1017,8 @@ function updatePlayer(dt) {
   const right = keys['ArrowRight'] || keys['KeyD'];
   const jumpHeld = keys['Space'] || keys['ArrowUp'] || keys['KeyW'];
   const wasOnGround = player.onGround;
-  const accel = MOVE_ACCEL * (player.onGround ? 1 : AIR_ACCEL_MULT);
+  const onIce = player.onGround && player.groundType === 'ice';
+  const accel = MOVE_ACCEL * (player.onGround ? (onIce ? 0.35 : 1) : AIR_ACCEL_MULT);
 
   if (left && !right) {
     player.vx -= accel * dt;
@@ -891,7 +1027,7 @@ function updatePlayer(dt) {
     player.vx += accel * dt;
     player.facing = 1;
   } else if (player.onGround) {
-    const f = FRICTION * dt;
+    const f = (onIce ? FRICTION * 0.08 : FRICTION) * dt;
     if (player.vx > 0) player.vx = Math.max(0, player.vx - f);
     else if (player.vx < 0) player.vx = Math.min(0, player.vx + f);
   }
@@ -912,10 +1048,11 @@ function updatePlayer(dt) {
   }
 
   let g = GRAVITY;
-  if (player.vy < 0 && !jumpHeld) g *= CUT_GRAVITY_MULT;
+  if (player.vy < 0 && !jumpHeld && !player.bounced) g *= CUT_GRAVITY_MULT;
   else if (player.vy > 0) g *= FALL_GRAVITY_MULT;
   player.vy += g * dt;
   if (player.vy > MAX_FALL) player.vy = MAX_FALL;
+  if (player.bounced && player.vy >= 0) player.bounced = false;
 
   // horizontal move + collision
   player.x += player.vx * dt;
@@ -925,6 +1062,8 @@ function updatePlayer(dt) {
   const impactVy = player.vy;
   player.y += player.vy * dt;
   player.onGround = false;
+  player.groundType = null;
+  player.groundPlatform = null;
   resolveCollisions('y');
 
   if (!wasOnGround && player.onGround) {
@@ -973,8 +1112,19 @@ function resolveCollisions(axis) {
     } else {
       if (player.vy > 0) {
         player.y = p.y - player.h;
-        player.vy = 0;
-        player.onGround = true;
+        if (p.type === 'bounce') {
+          player.vy = -(p.power || 950);
+          player.bounced = true;
+          player.squashX = 0.6; player.squashY = 1.5;
+          spawnDust(player.x + player.w / 2, player.y + player.h, 8);
+          addShake(2, 0.1);
+          Sound.jump();
+        } else {
+          player.vy = 0;
+          player.onGround = true;
+          player.groundType = p.type;
+          player.groundPlatform = p;
+        }
         if (p.type === 'hidden_spike' && !p.triggered) {
           p.triggered = true;
           p.t = 0;
@@ -1067,6 +1217,26 @@ function updateTraps(dt) {
       p.fallVy += 2000 * dt;
       p.y += p.fallVy * dt;
       if (p.y > H + 200) p.gone = true;
+    }
+  }
+}
+
+function updateMovingPlatforms(dt) {
+  for (const p of platformState) {
+    if (p.type !== 'moving' || p.gone) continue;
+    const prevX = p.x, prevY = p.y;
+    if (p.axis === 'y') {
+      p.y += p.speed * p.dir * dt;
+      if (p.y >= p.maxY) { p.y = p.maxY; p.dir = -1; }
+      if (p.y <= p.minY) { p.y = p.minY; p.dir = 1; }
+    } else {
+      p.x += p.speed * p.dir * dt;
+      if (p.x >= p.maxX) { p.x = p.maxX; p.dir = -1; }
+      if (p.x <= p.minX) { p.x = p.minX; p.dir = 1; }
+    }
+    if (player.onGround && player.groundPlatform === p) {
+      player.x += p.x - prevX;
+      player.y += p.y - prevY;
     }
   }
 }
@@ -1363,6 +1533,85 @@ function drawPlatforms() {
         ctx.moveTo(p.spikeX, p.y + 2);
         ctx.lineTo(p.spikeX + p.spikeW, p.y + 2);
         ctx.stroke();
+      }
+      continue;
+    }
+    if (p.type === 'ice') {
+      ctx.fillStyle = '#bfe9ff';
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = '#eaf9ff';
+      ctx.fillRect(p.x, p.y, p.w, 6);
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(p.x + p.w * 0.15, p.y + p.h - 4);
+      ctx.lineTo(p.x + p.w * 0.45, p.y + 8);
+      ctx.moveTo(p.x + p.w * 0.55, p.y + p.h - 4);
+      ctx.lineTo(p.x + p.w * 0.85, p.y + 8);
+      ctx.stroke();
+      continue;
+    }
+    if (p.type === 'bounce') {
+      ctx.fillStyle = '#f7b733';
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = '#ffe08a';
+      ctx.fillRect(p.x, p.y, p.w, 6);
+      ctx.strokeStyle = '#c9791a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      const coils = Math.max(2, Math.floor(p.w / 22));
+      for (let i = 0; i < coils; i++) {
+        const cx = p.x + (i + 0.5) * (p.w / coils);
+        ctx.moveTo(cx - 8, p.y + p.h * 0.5);
+        ctx.lineTo(cx, p.y + 10);
+        ctx.lineTo(cx + 8, p.y + p.h * 0.5);
+      }
+      ctx.stroke();
+      continue;
+    }
+    if (p.type === 'moving') {
+      ctx.fillStyle = '#7d8596';
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = '#a8b0c2';
+      ctx.fillRect(p.x, p.y, p.w, 6);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      const rivetY = p.y + p.h - 8;
+      for (let bx = p.x + 8; bx < p.x + p.w; bx += 20) {
+        ctx.beginPath();
+        ctx.arc(bx, rivetY, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // directional arrow showing the axis it travels
+      ctx.fillStyle = 'rgba(200,225,255,0.85)';
+      const acx = p.x + p.w / 2, acy = p.y + p.h / 2;
+      ctx.save();
+      ctx.translate(acx, acy);
+      if (p.axis === 'y') ctx.rotate(p.dir > 0 ? Math.PI / 2 : -Math.PI / 2);
+      else if (p.dir < 0) ctx.rotate(Math.PI);
+      ctx.beginPath();
+      ctx.moveTo(7, 0);
+      ctx.lineTo(-4, -6);
+      ctx.lineTo(-4, 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      continue;
+    }
+    if (p.type === 'stone') {
+      ctx.fillStyle = '#6b6f76';
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = '#888e99';
+      ctx.fillRect(p.x, p.y, p.w, 6);
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+      ctx.lineWidth = 1;
+      const rowH = 12;
+      let row = 0;
+      for (let ry = p.y + 6; ry < p.y + p.h; ry += rowH) {
+        const offset = (row % 2) * 17;
+        for (let bx = p.x + offset; bx < p.x + p.w; bx += 34) {
+          ctx.strokeRect(bx, ry, 34, rowH);
+        }
+        row++;
       }
       continue;
     }

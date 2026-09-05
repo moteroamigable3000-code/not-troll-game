@@ -33,18 +33,20 @@ canvas, img {
 #wrap {
   position: relative;
   overflow: hidden;
-  /* The whole app — menus included, not just the canvas — is a 16:9
-     window: shrink-to-fit the largest 960:540 box that fits the viewport,
-     the same aspect-ratio trick #canvasFrame uses below. Portrait phones
-     are turned away by #rotateHint before they'd ever see this box tiny
-     and letterboxed, so this can stay a true widescreen shape instead of
-     stretching to fill whatever the screen happens to be. */
-  width: auto;
-  height: auto;
-  max-width: min(960px, 100vw);
-  max-height: 100vh;
-  max-height: 100dvh;
-  aspect-ratio: 960 / 540;
+  /* #wrap always spans the full viewport (capped at 960px wide so it
+     doesn't balloon on desktop) so the full-bleed menu screens — which are
+     absolutely positioned to fill #wrap — cover the whole phone screen
+     instead of floating in a tiny box surrounded by bare page background.
+     Sizing the actual game view (HUD + canvas) to fit inside that box is
+     handled below by flex + object-fit, not by locking #wrap itself to
+     16:9 — a phone's screen is usually wider than 16:9 in landscape, and
+     that lock used to letterbox the whole app (menus and HUD included),
+     not just the canvas. Only #canvasFrame below needs the 16:9 lock,
+     since that's the box whose contents (the game canvas) actually has a
+     fixed-ratio world to fit. */
+  width: min(960px, 100vw);
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
 }

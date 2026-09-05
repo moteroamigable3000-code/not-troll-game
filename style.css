@@ -3,24 +3,109 @@
 html, body {
   margin: 0;
   height: 100%;
-  background: #111;
-  color: #eee;
-  font-family: 'Segoe UI', Tahoma, sans-serif;
+  background: #0c0a16;
+  color: #f2eefc;
+  font-family: 'VT323', monospace;
+  font-size: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
+  /* This is a game, not a page — no text selection, no drag-to-select,
+     no long-press callout on mobile. Keeps right-click/copy from breaking
+     the illusion (paired with the contextmenu block in game.js). */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+canvas, img {
+  -webkit-user-drag: none;
+  user-drag: none;
 }
 
 #wrap {
   position: relative;
-  width: 960px;
-  max-width: 100vw;
+  /* Fits the 960x540 canvas (plus the ~70px of HUD/progress-bar chrome
+     above it) into whichever dimension is tighter — viewport width (a
+     narrow phone) or viewport height (a short/landscape window) — so the
+     game scales to fill the screen instead of shrinking to the width
+     alone and leaving the rest of a tall viewport empty. */
+  width: min(960px, 100vw, calc((100vh - 70px) * (960 / 540)));
 }
 
 #canvasArea {
   position: relative;
 }
 
+/* Studio splash — shown once on load, above absolutely everything else
+   (including the main menu), then fades out on its own or on skip. */
+#splashScreen {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0c0a16;
+  cursor: pointer;
+  transition: opacity 0.6s ease;
+}
+#splashScreen.fadeOut {
+  opacity: 0;
+  pointer-events: none;
+}
+#splashScreen[hidden] { display: none; }
+
+#splashLogoWrap {
+  position: relative;
+  width: min(300px, 50%);
+  animation: splashIn 0.5s ease;
+  filter: drop-shadow(0 0 24px rgba(178, 102, 255, 0.45));
+}
+
+#splashLogo {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Glass-shine sweep — a diagonal light band masked to the logo's own alpha
+   shape, so it glides only across the visible mark/text, not a plain box. */
+#splashShine {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: url('recursos/EMPRESA.png');
+  -webkit-mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-image: url('recursos/EMPRESA.png');
+  mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  background: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0) 40%,
+    rgba(255, 255, 255, 0.9) 50%,
+    rgba(200, 170, 255, 0.5) 56%,
+    rgba(255, 255, 255, 0) 68%
+  );
+  background-size: 300% 300%;
+  background-position: 120% -20%;
+  animation: shineSweep 3.2s ease-in-out infinite;
+  animation-delay: 0.7s;
+  pointer-events: none;
+}
+@keyframes shineSweep {
+  0%   { background-position: 120% -20%; }
+  40%  { background-position: -60% 100%; }
+  100% { background-position: -60% 100%; }
+}
+
+@keyframes splashIn {
+  0%   { opacity: 0; transform: scale(0.92); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* The game view itself (blocks, character, background) stays exactly as it
+   was — only the surrounding menu chrome gets the indie treatment. */
 canvas {
   display: block;
   width: 100%;
@@ -35,35 +120,31 @@ canvas {
 
 #hud {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
-  padding: 8px 4px;
-  font-weight: bold;
+  gap: 8px 14px;
+  padding: 10px 4px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(9px, 2.2vw, 11px);
   letter-spacing: 0.5px;
 }
 
-#levelLabel { font-size: 18px; }
+#levelLabel { font-size: 1.1em; color: #ffd166; }
 #deathLabel { color: #ff6b6b; }
 
 #restartBtn {
-  margin-left: auto;
-  background: #333;
-  color: #eee;
-  border: 2px solid #555;
-  border-radius: 4px;
-  padding: 6px 12px;
-  cursor: pointer;
-  font-weight: bold;
+  margin-left: 0;
+  font-family: 'Press Start 2P', monospace;
 }
-#restartBtn:hover { background: #444; }
 
 #progressTrack {
-  height: 6px;
-  border-radius: 3px;
-  background: #2a2a2a;
+  height: 8px;
+  border-radius: 0;
+  background: #1a1626;
+  border: 2px solid #000;
   overflow: hidden;
-  margin: 0 4px 8px;
-  box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
+  margin: 0 4px 10px;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.6);
 }
 
 #progressFill {
@@ -86,15 +167,18 @@ canvas {
 }
 
 #overlayTitle {
-  font-size: 42px;
-  font-weight: 900;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 28px;
   opacity: 0;
+  color: #fff;
+  text-shadow: 3px 3px 0 #6b4fd6, 0 2px 10px rgba(0,0,0,0.8);
 }
 
 #overlaySub {
-  font-size: 18px;
+  font-family: 'VT323', monospace;
+  font-size: 24px;
   opacity: 0;
-  margin-top: 8px;
+  margin-top: 10px;
   color: #ffd166;
 }
 
@@ -149,6 +233,11 @@ canvas {
   touch-action: none;
   padding: 0;
   pointer-events: auto;
+  transform: translateY(-8%);
+}
+
+#btnJump {
+  width: clamp(77px, 21vw, 202px);
 }
 
 /* Arrow-shaped buttons via clip-path — flat back edge, single point at the
@@ -177,3 +266,493 @@ canvas {
 @media (pointer: coarse), (max-width: 1024px) {
   #touchControls { display: flex; }
 }
+
+/* ---------- Indie pixel-button base, shared by HUD buttons and menu
+   buttons. Hard offset shadow that collapses on press reads as a physical
+   button, not a web control. (Level map nodes get their own look below —
+   they're round portals on a map, not rectangular buttons.) ---------- */
+.menuBtn,
+#restartBtn {
+  font-family: 'Press Start 2P', monospace;
+  background: #2b2246;
+  color: #f2eefc;
+  border: 2px solid #000;
+  border-radius: 0;
+  box-shadow: 4px 4px 0 #000;
+  cursor: pointer;
+  transition: transform 0.05s ease-out, box-shadow 0.05s ease-out, background 0.1s ease;
+}
+.menuBtn:hover:not(:disabled),
+#restartBtn:hover {
+  background: #3a2e5e;
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 #000;
+}
+.menuBtn:active:not(:disabled),
+#restartBtn:active {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 #000;
+}
+.menuBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+#restartBtn {
+  padding: 8px 14px;
+  font-size: 10px;
+}
+
+/* Full-screen menu overlays (main menu, level map, options) — sit on top of
+   the entire #wrap (HUD included) so they fully block the game underneath. */
+.screenOverlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  background: radial-gradient(ellipse at center, #241d3d 0%, #120f1f 100%);
+  border: 3px solid #000;
+  box-shadow: inset 0 0 0 3px #4a3a70;
+  border-radius: 0;
+  text-align: center;
+}
+
+.screenOverlay[hidden] { display: none; }
+
+/* Faint scanline texture — only over the menu chrome, never over the
+   actual gameplay canvas. */
+.screenOverlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.035) 0px,
+    rgba(255, 255, 255, 0.035) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: overlay;
+}
+
+.screenOverlay > * {
+  position: relative;
+  z-index: 1;
+}
+
+#mainMenu, #optionsMenu {
+  background-image:
+    linear-gradient(rgba(10,8,20,0.55), rgba(14,10,26,0.8)),
+    url('recursos/FONDO_MENU_OPCIONES.png');
+  background-size: cover;
+  background-position: center;
+}
+
+#mainMenuTagline {
+  /* Part of the normal flex flow now (not an absolute overlay pinned to a
+     % of the menu's height) so it can never drift into overlapping the
+     title below it once either line wraps or shrinks on a narrow screen. */
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(20px, 6vw, 42px);
+  letter-spacing: clamp(1px, 0.8vw, 4px);
+  color: #ff5757;
+  text-shadow: 5px 5px 0 rgba(0,0,0,0.6), 0 0 24px rgba(255, 87, 87, 0.6);
+  white-space: nowrap;
+  margin: 0;
+}
+
+.screenOverlay h1 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(16px, 5vw, 30px);
+  line-height: 1.5;
+  margin: 0 0 14px;
+  color: #fff;
+  text-shadow: 3px 3px 0 #6b4fd6, 6px 6px 0 rgba(0,0,0,0.6);
+  letter-spacing: 1px;
+}
+
+.screenOverlay h2 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(12px, 4vw, 16px);
+  line-height: 1.6;
+  margin: 0 0 10px;
+  color: #ffd166;
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.8), 0 0 16px rgba(255,209,102,0.55);
+}
+
+.menuBtn {
+  padding: 12px 22px;
+  font-size: 13px;
+  min-width: 190px;
+}
+
+/* Deliberately the runt of the main menu so it doesn't compete for
+   attention — Info isn't a page we want people visiting often. */
+#infoMenuBtn {
+  padding: 8px 14px;
+  font-size: 8.5px;
+  min-width: 124px;
+  border-width: 1px;
+  box-shadow: 2px 2px 0 #000;
+}
+#infoMenuBtn:hover:not(:disabled) {
+  box-shadow: 2.5px 2.5px 0 #000;
+}
+#infoMenuBtn:active:not(:disabled) {
+  box-shadow: 0.5px 0.5px 0 #000;
+}
+
+.backBtn { margin-top: 12px; }
+
+/* ---------- Profile screen: login / register form ---------- */
+#authTabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.authTab {
+  min-width: 0;
+  padding: 8px 14px;
+  font-size: 10px;
+  opacity: 0.6;
+}
+.authTab.active {
+  opacity: 1;
+  background: #3a2e5e;
+  box-shadow: inset 0 0 0 2px #ffd166, 4px 4px 0 #000;
+}
+
+#authForm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(320px, 80vw);
+}
+
+.formRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+.formRow label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  color: #ffd166;
+}
+.formRow input {
+  font-family: 'VT323', monospace;
+  font-size: 20px;
+  padding: 8px 10px;
+  background: #17132a;
+  color: #f2eefc;
+  border: 2px solid #000;
+  box-shadow: inset 0 0 0 2px #4a3a70;
+  border-radius: 0;
+}
+.formRow input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 2px #ffd166;
+}
+
+#authForm .menuBtn {
+  align-self: center;
+  margin-top: 4px;
+}
+
+.authError {
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  color: #ff6b6b;
+  text-align: left;
+}
+
+#profileLoggedIn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+#profileLoggedIn[hidden] {
+  display: none;
+}
+#profileWelcome {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 13px;
+  color: #ffd166;
+  margin: 0;
+}
+.profileHint {
+  font-size: 18px;
+  color: #cabde8;
+  margin: 0;
+  max-width: min(360px, 80vw);
+}
+
+#infoContent {
+  max-width: min(480px, 80vw);
+  text-align: left;
+  line-height: 1.4;
+}
+#infoContent p { margin: 0 0 14px; }
+#infoContent strong { color: #ffd166; }
+
+#infoCopyright {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: #8a80a8;
+}
+
+/* ---------- Level map: a winding path across a little painted world,
+   not a grid of buttons — nodes are portals scattered along a trail. ---------- */
+#mapCanvas {
+  position: relative;
+  width: min(640px, 86vw);
+  height: min(420px, 58vh);
+  background:
+    radial-gradient(ellipse at 50% 16%, rgba(255, 209, 102, 0.12), transparent 22%),
+    linear-gradient(180deg, #11142d 0%, #1e1835 48%, #33254e 100%);
+  border: 3px solid #000;
+  box-shadow:
+    inset 0 0 0 3px #5e4b8a,
+    inset 0 0 34px rgba(0, 0, 0, 0.58),
+    0 0 22px rgba(106, 77, 188, 0.34),
+    7px 7px 0 rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+#mapCanvas::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 1px solid rgba(255, 209, 102, 0.16);
+  box-shadow: inset 0 0 18px rgba(255, 209, 102, 0.08);
+  pointer-events: none;
+  z-index: 6;
+}
+
+#mapCanvas::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+  background-size: 24px 24px;
+  opacity: 0.08;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.mapStars {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 14% 20%, rgba(255,255,255,0.9) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 32% 10%, rgba(255,255,255,0.5) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 49% 24%, rgba(255,255,255,0.6) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 69% 15%, rgba(255,255,255,0.8) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 88% 29%, rgba(255,255,255,0.45) 0 1px, transparent 1.5px);
+  opacity: 0.72;
+  animation: mapTwinkle 3.4s ease-in-out infinite;
+}
+
+.mapMist {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  bottom: 16%;
+  height: 30%;
+  background:
+    linear-gradient(90deg, transparent, rgba(178,102,255,0.12), transparent),
+    linear-gradient(180deg, transparent, rgba(255,255,255,0.06), transparent);
+  filter: blur(8px);
+  opacity: 0.78;
+  animation: mapMistDrift 8s ease-in-out infinite alternate;
+}
+
+@keyframes mapTwinkle {
+  0%, 100% { opacity: 0.52; }
+  50% { opacity: 0.9; }
+}
+
+@keyframes mapMistDrift {
+  0% { transform: translateX(-2%); }
+  100% { transform: translateX(2%); }
+}
+
+.mapMountains {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 1;
+}
+.mapMountainsFar {
+  height: 42%;
+  background: linear-gradient(180deg, #251d43, #1a1430);
+  clip-path: polygon(0% 100%, 0% 58%, 9% 70%, 21% 39%, 33% 66%, 46% 32%, 58% 64%, 70% 28%, 82% 60%, 94% 36%, 100% 58%, 100% 100%);
+  opacity: 0.95;
+}
+.mapMountainsNear {
+  height: 26%;
+  background: linear-gradient(180deg, #3a2b62, #2b214c);
+  clip-path: polygon(0% 100%, 0% 62%, 14% 80%, 29% 49%, 42% 74%, 56% 44%, 70% 72%, 84% 47%, 100% 69%, 100% 100%);
+}
+
+#mapScroll {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
+}
+#mapScroll::-webkit-scrollbar { display: none; }
+#mapScroll.dragging { cursor: grabbing; }
+
+#mapInner {
+  position: relative;
+  width: 100%;
+}
+
+#mapPath {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+.mapPathFull, .mapPathGlow, .mapPathTraveled { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.mapPathGlow { stroke: rgba(178,102,255,0.24); stroke-width: 5; filter: blur(2px); }
+.mapPathFull { stroke: rgba(255,255,255,0.22); stroke-width: 1.2; stroke-dasharray: 2 2; }
+.mapPathTraveled {
+  stroke: #ffd166;
+  stroke-width: 1.8;
+  stroke-dasharray: 1.2 2.1;
+  filter: drop-shadow(0 0 3px rgba(255,209,102,0.85));
+  animation: trailGlow 1.8s ease-in-out infinite;
+}
+
+@keyframes trailGlow {
+  0%, 100% { opacity: 0.82; }
+  50% { opacity: 1; }
+}
+
+#levelGrid {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+}
+
+.levelNode {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: clamp(46px, 12vw, 62px);
+  height: clamp(46px, 12vw, 62px);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 13px;
+  color: #1a0f2e;
+  border: none;
+  cursor: pointer;
+  background:
+    radial-gradient(circle at 32% 28%, #fff9ff 0 10%, #d7b5ff 11% 22%, transparent 23%),
+    radial-gradient(circle at 50% 54%, #c789ff 0 36%, #7e45dc 58%, #2b164f 100%);
+  box-shadow:
+    0 0 0 3px #000,
+    inset 0 0 0 3px rgba(255,255,255,0.12),
+    inset 0 -8px 0 rgba(0,0,0,0.14),
+    0 0 15px 2px rgba(178,102,255,0.72),
+    3px 3px 0 rgba(0,0,0,0.55);
+  text-shadow: 1px 1px 0 rgba(255,255,255,0.45);
+  transition: transform 0.15s ease-out, box-shadow 0.15s ease-out, filter 0.15s ease-out;
+  z-index: 2;
+}
+.levelNode:hover:not(:disabled) {
+  transform: translate(-50%, -50%) scale(1.12);
+  filter: saturate(1.18) brightness(1.08);
+  box-shadow:
+    0 0 0 3px #000,
+    inset 0 0 0 3px rgba(255,255,255,0.18),
+    inset 0 -8px 0 rgba(0,0,0,0.12),
+    0 0 26px 7px rgba(255,209,102,0.54),
+    3px 3px 0 rgba(0,0,0,0.55);
+}
+.levelNode:active:not(:disabled) {
+  transform: translate(-50%, -50%) scale(0.92);
+}
+.levelNode.locked {
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255,255,255,0.18) 0 10%, transparent 11%),
+    radial-gradient(circle at 50% 54%, #40395e 0 38%, #262139 68%, #171323 100%);
+  color: #665f7a;
+  font-size: 15px;
+  box-shadow:
+    0 0 0 3px #000,
+    inset 0 0 0 3px rgba(255,255,255,0.05),
+    inset 0 -8px 0 rgba(0,0,0,0.18),
+    3px 3px 0 rgba(0,0,0,0.55);
+  cursor: not-allowed;
+  filter: grayscale(0.35);
+}
+.levelNode.locked[data-badge]::before {
+  content: attr(data-badge);
+  position: absolute;
+  left: 50%;
+  bottom: -18px;
+  transform: translateX(-50%);
+  min-width: 38px;
+  padding: 4px 5px 3px;
+  background: #151123;
+  color: #8f84b5;
+  border: 2px solid #000;
+  box-shadow: 2px 2px 0 #000;
+  font-size: 7px;
+  line-height: 1;
+}
+.levelNode.current {
+  animation: nodePulse 1.4s ease-in-out infinite;
+}
+.levelNode.current::after {
+  content: "";
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 8px solid #ffd166;
+  animation: markerBob 1s ease-in-out infinite;
+}
+@keyframes nodePulse {
+  0%, 100% { box-shadow: 0 0 0 3px #000, 0 0 10px 2px rgba(255,209,102,0.6), 3px 3px 0 rgba(0,0,0,0.5); }
+  50%      { box-shadow: 0 0 0 3px #000, 0 0 20px 7px rgba(255,209,102,0.9), 3px 3px 0 rgba(0,0,0,0.5); }
+}
+@keyframes markerBob {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50%      { transform: translateX(-50%) translateY(4px); }
+}
+
+.optionRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+}
+
+#hud .menuBtn {
+  min-width: 0;
+  padding: 8px 12px;
+  font-size: clamp(8px, 2vw, 10px);
+}
+#mapBtn { margin-left: auto; }

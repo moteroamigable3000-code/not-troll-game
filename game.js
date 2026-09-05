@@ -4,12 +4,65 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const W = canvas.width, H = canvas.height;
 
+const bgImage = new Image();
+let bgImageReady = false;
+bgImage.onload = () => { bgImageReady = true; };
+bgImage.src = 'recursos/FONDO_JUEGO.png';
+
 const levelLabel = document.getElementById('levelLabel');
 const deathLabel = document.getElementById('deathLabel');
 const overlayTitle = document.getElementById('overlayTitle');
 const overlaySub = document.getElementById('overlaySub');
 const progressFill = document.getElementById('progressFill');
 document.getElementById('restartBtn').onclick = () => restartLevel();
+
+// ---------- Studio splash ----------
+const splashScreen = document.getElementById('splashScreen');
+let splashActive = true;
+const splashSound = new Audio('recursos/splash_inicio.mp3');
+splashSound.volume = 0.75;
+
+function playSplashSound() {
+  if (!splashActive || localStorage.getItem('notTrollSoundOn') === '0') return;
+  try {
+    splashSound.currentTime = 0;
+    splashSound.play().catch(() => {});
+  } catch (e) { /* autoplay can be blocked until the first gesture */ }
+}
+
+function dismissSplash() {
+  if (!splashActive) return;
+  splashActive = false;
+  // Let the sting finish playing even if the visual splash is skipped —
+  // stopping it here would cut it off the instant a click/keydown unlocks
+  // audio, since play() and this dismiss fire in the same handler.
+  splashScreen.classList.add('fadeOut');
+  setTimeout(() => { splashScreen.hidden = true; }, 650);
+}
+playSplashSound();
+setTimeout(dismissSplash, 2200);
+splashScreen.addEventListener('click', () => {
+  playSplashSound();
+  dismissSplash();
+});
+window.addEventListener('keydown', () => {
+  playSplashSound();
+  dismissSplash();
+}, { once: true });
+
+// ---------- Menus (main menu, level map, options) ----------
+const mainMenu = document.getElementById('mainMenu');
+const levelMap = document.getElementById('levelMap');
+const optionsMenu = document.getElementById('optionsMenu');
+const profileMenu = document.getElementById('profileMenu');
+const infoMenu = document.getElementById('infoMenu');
+const levelGrid = document.getElementById('levelGrid');
+const mapPath = document.getElementById('mapPath');
+const mapScroll = document.getElementById('mapScroll');
+const mapInner = document.getElementById('mapInner');
+const soundToggleBtn = document.getElementById('soundToggleBtn');
+let paused = false;
+let soundOn = localStorage.getItem('notTrollSoundOn') !== '0';
 
 // ---------- Sound (synthesized, no assets needed) ----------
 const Sound = (() => {
@@ -23,6 +76,7 @@ const Sound = (() => {
     return ctxA;
   }
   function tone(freq, dur, type, gain, glideTo) {
+    if (!soundOn) return;
     const a = ac();
     if (!a) return;
     try {
@@ -39,6 +93,7 @@ const Sound = (() => {
     } catch (e) { /* audio unsupported in this context — fail silently */ }
   }
   function noise(dur, gain) {
+    if (!soundOn) return;
     const a = ac();
     if (!a) return;
     try {
@@ -62,16 +117,106 @@ const Sound = (() => {
     goal: () => { tone(523, 0.1, 'square', 0.15, 523); setTimeout(() => tone(659, 0.1, 'square', 0.15, 659), 90); setTimeout(() => tone(784, 0.22, 'square', 0.18, 784), 180); },
     pop: () => tone(200, 0.08, 'square', 0.1, 90),
     crumble: () => noise(0.15, 0.12),
+    boom: () => { tone(90, 0.3, 'sawtooth', 0.2, 40); noise(0.3, 0.22); },
     resume: () => ac(),
   };
 })();
 window.addEventListener('keydown', () => Sound.resume(), { once: true });
 window.addEventListener('pointerdown', () => Sound.resume(), { once: true });
 
+function applySoundButtonLabel() {
+  soundToggleBtn.textContent = 'Sonido: ' + (soundOn ? 'ON' : 'OFF');
+}
+soundToggleBtn.addEventListener('click', () => {
+  soundOn = !soundOn;
+  localStorage.setItem('notTrollSoundOn', soundOn ? '1' : '0');
+  applySoundButtonLabel();
+});
+applySoundButtonLabel();
+
+// ---------- Music — two mutually-exclusive tracks. Gameplay music plays
+// only during an actual level (state === 'playing'); menu music plays only
+// over the main menu and the level map — never both, never over options
+// or the level intro/dead/complete transitions. ----------
+const musicToggleBtn = document.getElementById('musicToggleBtn');
+let musicOn = localStorage.getItem('notTrollMusicOn') !== '0';
+const bgMusic = new Audio('recursos/musica_indie_gameplay.wav');
+bgMusic.loop = true;
+bgMusic.volume = 0.35;
+const menuMusic = new Audio('recursos/musica_menu_y_mapa.wav');
+menuMusic.loop = true;
+menuMusic.volume = 0.35;
+
+function applyMusicButtonLabel() {
+  musicToggleBtn.textContent = 'Musica: ' + (musicOn ? 'ON' : 'OFF');
+}
+musicToggleBtn.addEventListener('click', () => {
+  musicOn = !musicOn;
+  localStorage.setItem('notTrollMusicOn', musicOn ? '1' : '0');
+  applyMusicButtonLabel();
+});
+applyMusicButtonLabel();
+
+// Stop both tracks the moment the tab is closed/hidden/backgrounded — a
+// looping <audio> otherwise keeps playing (and keeps the tab "alive" in
+// some browsers) after the user navigates away or closes it.
+function stopAllMusic() {
+  bgMusic.pause();
+  menuMusic.pause();
+}
+window.addEventListener('pagehide', stopAllMusic);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopAllMusic();
+});
+
+// Checked every frame.
+function updateMusicPlayback() {
+  const menuVisible = !mainMenu.hidden || !levelMap.hidden;
+  const shouldPlayGameplay = musicOn && state === 'playing' && !paused;
+  const shouldPlayMenu = musicOn && menuVisible;
+  if (shouldPlayGameplay && bgMusic.paused) bgMusic.play().catch(() => {});
+  else if (!shouldPlayGameplay && !bgMusic.paused) bgMusic.pause();
+  if (shouldPlayMenu && menuMusic.paused) menuMusic.play().catch(() => {});
+  else if (!shouldPlayMenu && !menuMusic.paused) menuMusic.pause();
+}
+
+// Browsers require a real user gesture before any audio can play at all —
+// "prime" both tracks here, then immediately hand control back to
+// updateMusicPlayback() so only the right one actually plays.
+function primeMusic() {
+  bgMusic.play().then(() => { if (state !== 'playing' || paused) bgMusic.pause(); }).catch(() => {});
+  menuMusic.play().then(() => { if (mainMenu.hidden && levelMap.hidden) menuMusic.pause(); }).catch(() => {});
+}
+window.addEventListener('keydown', primeMusic, { once: true });
+window.addEventListener('pointerdown', primeMusic, { once: true });
+
+// ---------- Click sound — any UI button (menu, map node, options, HUD),
+// but not the on-screen movement pad, which fires far too rapidly for it. ----------
+const clickSound = new Audio('recursos/clic.wav');
+clickSound.volume = 0.5;
+document.addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn || btn.classList.contains('touchBtn') || !soundOn) return;
+  try { clickSound.currentTime = 0; clickSound.play().catch(() => {}); } catch (err) { /* ignore */ }
+});
+
+// ---------- Lock it down like a game, not a webpage ----------
+window.addEventListener('contextmenu', e => e.preventDefault());
+window.addEventListener('selectstart', e => e.preventDefault());
+canvas.addEventListener('dragstart', e => e.preventDefault());
+
 // ---------- Input ----------
 const keys = {};
 const JUMP_CODES = ['Space', 'ArrowUp', 'KeyW'];
 window.addEventListener('keydown', e => {
+  if (e.code === 'Escape') {
+    if (level) {
+      if (paused) closeAllScreens();
+      else openLevelMap();
+    }
+    return;
+  }
+  if (paused) return;
   if (JUMP_CODES.includes(e.code) && !keys[e.code] && typeof player !== 'undefined' && player) {
     player.jumpBuffer = JUMP_BUFFER_TIME;
   }
@@ -115,12 +260,395 @@ if (btnLeft && btnRight && btnJump) {
 // ---------- Optional backend API ----------
 const API_BASE_URL = (window.API_BASE_URL || '').replace(/\/$/, '');
 
+function getPlayerId() {
+  let id = localStorage.getItem('notTrollPlayerId');
+  if (!id) {
+    id = window.crypto && crypto.randomUUID
+      ? crypto.randomUUID()
+      : 'p-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem('notTrollPlayerId', id);
+  }
+  return id;
+}
+
+function getAccount() {
+  try {
+    const raw = localStorage.getItem('notTrollAccount');
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function setAccountSession(account) {
+  localStorage.setItem('notTrollAccount', JSON.stringify(account));
+  PLAYER_ID = account.player_id;
+}
+
+function clearAccountSession() {
+  localStorage.removeItem('notTrollAccount');
+  PLAYER_ID = getPlayerId();
+}
+
+const account0 = getAccount();
+let PLAYER_ID = account0 ? account0.player_id : getPlayerId();
+let unlockedLevels = 1;
+let levelsMeta = [];
+
+async function fetchLevelsMeta() {
+  const res = await fetch(API_BASE_URL + '/levels');
+  if (!res.ok) throw new Error('No se pudo cargar la lista de niveles.');
+  return res.json();
+}
+
+async function fetchProgress() {
+  const res = await fetch(API_BASE_URL + '/progress/' + encodeURIComponent(PLAYER_ID));
+  if (!res.ok) throw new Error('No se pudo cargar el progreso.');
+  return res.json();
+}
+
+async function saveProgress(unlocked) {
+  if (!API_BASE_URL) return;
+  try {
+    const res = await fetch(API_BASE_URL + '/progress', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ player_id: PLAYER_ID, unlocked }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      unlockedLevels = Math.max(unlockedLevels, data.unlocked);
+    }
+  } catch (e) {
+    console.warn('No se pudo guardar el progreso.', e);
+  }
+}
+
+// ---------- Profile: login / register, backed by the same progress API ----------
+const authForm = document.getElementById('authForm');
+const authEmail = document.getElementById('authEmail');
+const authPassword = document.getElementById('authPassword');
+const authError = document.getElementById('authError');
+const authSubmitBtn = document.getElementById('authSubmitBtn');
+const authTabLogin = document.getElementById('authTabLogin');
+const authTabRegister = document.getElementById('authTabRegister');
+const profileLoggedOut = document.getElementById('profileLoggedOut');
+const profileLoggedIn = document.getElementById('profileLoggedIn');
+const profileWelcome = document.getElementById('profileWelcome');
+let authMode = 'login';
+
+function setAuthMode(mode) {
+  authMode = mode;
+  authTabLogin.classList.toggle('active', mode === 'login');
+  authTabRegister.classList.toggle('active', mode === 'register');
+  authSubmitBtn.textContent = mode === 'login' ? 'Iniciar sesion' : 'Crear cuenta';
+  authPassword.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+  authError.hidden = true;
+}
+
+authTabLogin.addEventListener('click', () => setAuthMode('login'));
+authTabRegister.addEventListener('click', () => setAuthMode('register'));
+
+function refreshProfileScreen() {
+  const account = getAccount();
+  if (account) {
+    profileLoggedOut.hidden = true;
+    profileLoggedIn.hidden = false;
+    profileWelcome.textContent = 'Sesion iniciada como ' + account.email;
+  } else {
+    profileLoggedOut.hidden = false;
+    profileLoggedIn.hidden = true;
+    authForm.reset();
+    authError.hidden = true;
+    setAuthMode('login');
+  }
+}
+
+async function applyLoggedInProgress(account) {
+  const localUnlocked = unlockedLevels;
+  setAccountSession(account);
+  try {
+    const progress = await fetchProgress();
+    unlockedLevels = Math.max(progress.unlocked, localUnlocked);
+  } catch (e) {
+    unlockedLevels = localUnlocked;
+  }
+  await saveProgress(unlockedLevels);
+  buildLevelGrid();
+}
+
+authForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!API_BASE_URL) {
+    authError.textContent = 'Backend no configurado.';
+    authError.hidden = false;
+    return;
+  }
+  const email = authEmail.value.trim();
+  const password = authPassword.value;
+  authSubmitBtn.disabled = true;
+  authError.hidden = true;
+  try {
+    const endpoint = authMode === 'login' ? '/auth/login' : '/auth/register';
+    const res = await fetch(API_BASE_URL + endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      authError.textContent = data.detail || 'No se pudo completar la operacion.';
+      authError.hidden = false;
+      return;
+    }
+    await applyLoggedInProgress(data);
+    refreshProfileScreen();
+  } catch (err) {
+    authError.textContent = 'No se pudo conectar con el servidor.';
+    authError.hidden = false;
+  } finally {
+    authSubmitBtn.disabled = false;
+  }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  clearAccountSession();
+  unlockedLevels = 1;
+  fetchProgress().then(progress => {
+    unlockedLevels = progress.unlocked;
+    buildLevelGrid();
+  }).catch(() => {});
+  refreshProfileScreen();
+});
+
+// Procedural zigzag so the map reads as a winding trail rather than a grid,
+// and always has consistent spacing no matter how many levels the backend
+// reports — no more hand-tuned per-level coordinates that go stale (and
+// collide) the moment a level is added or removed.
+// Level 1 sits near the bottom of the content; each next level climbs
+// higher, so a tall level list becomes a scrollable trail instead of a
+// cramped fixed box — the viewport auto-scrolls to reveal newly unlocked
+// levels as they're discovered.
+const MAP_NODE_STEP = 92;   // vertical px between consecutive levels — comfortably more than the node's max rendered size
+const MAP_TOP_PAD = 60;
+const MAP_BOTTOM_PAD = 70;
+
+function computeMapLayout(count, viewportH) {
+  const contentH = Math.max(viewportH, MAP_TOP_PAD + MAP_BOTTOM_PAD + Math.max(0, count - 1) * MAP_NODE_STEP);
+  const positions = [];
+  for (let i = 0; i < count; i++) {
+    const xPct = 50 + 30 * Math.sin(i * 0.85 + 0.6) + 9 * Math.sin(i * 2.3 + 1.4);
+    positions.push({
+      x: Math.min(86, Math.max(14, xPct)),
+      y: contentH - MAP_BOTTOM_PAD - i * MAP_NODE_STEP,
+    });
+  }
+  return { positions, contentH };
+}
+
+// Closed-padlock icon for locked map nodes — a plain line-art lock rather
+// than the default emoji, recolored to sit on the node's dark background.
+const LOCK_ICON_SVG = '<svg viewBox="0 0 24 24" width="60%" height="60%" fill="none">' +
+  '<path d="M7 10V7a5 5 0 0 1 10 0v3" stroke="#9a8fc7" stroke-width="2" stroke-linecap="round"/>' +
+  '<rect x="5" y="10" width="14" height="10" rx="2" fill="#332d4d" stroke="#9a8fc7" stroke-width="2"/>' +
+  '<circle cx="12" cy="14.3" r="1.5" fill="#9a8fc7"/>' +
+  '<rect x="11.1" y="15.2" width="1.8" height="2.6" rx="0.5" fill="#9a8fc7"/>' +
+  '</svg>';
+
+function drawMapPath(positions, width, contentH) {
+  mapPath.setAttribute('width', width);
+  mapPath.setAttribute('height', contentH);
+  mapPath.setAttribute('viewBox', `0 0 ${width} ${contentH}`);
+  if (positions.length < 2) { mapPath.innerHTML = ''; return; }
+  const toD = pts => 'M ' + pts.map(p => (p.x / 100 * width) + ' ' + p.y).join(' L ');
+  const traveledCount = Math.min(positions.length, Math.max(1, unlockedLevels));
+  mapPath.innerHTML =
+    `<path d="${toD(positions)}" class="mapPathGlow"/>` +
+    `<path d="${toD(positions)}" class="mapPathFull"/>` +
+    `<path d="${toD(positions.slice(0, traveledCount))}" class="mapPathTraveled"/>`;
+}
+
+function buildLevelGrid() {
+  levelGrid.innerHTML = '';
+  const count = levelsMeta.length || totalLevels || 1;
+  const viewportW = mapScroll.clientWidth;
+  const viewportH = mapScroll.clientHeight;
+  const { positions, contentH } = computeMapLayout(count, viewportH);
+  mapInner.style.height = contentH + 'px';
+
+  let currentY = contentH;
+  for (let i = 0; i < count; i++) {
+    const pos = positions[i];
+    const meta = levelsMeta[i] || { name: 'Nivel ' + (i + 1) };
+    const locked = meta.locked;
+    const isCurrent = !locked && i === unlockedLevels - 1;
+    if (isCurrent) currentY = pos.y;
+    const btn = document.createElement('button');
+    btn.className = 'levelNode' + (locked ? ' locked' : '') + (isCurrent ? ' current' : '');
+    btn.disabled = locked;
+    const label = meta.locked ? meta.name + ' - Proximamente' : meta.name;
+    btn.setAttribute('aria-label', label);
+    btn.style.left = pos.x + '%';
+    btn.style.top = pos.y + 'px';
+    btn.dataset.level = String(i + 1);
+    if (locked) {
+      btn.innerHTML = LOCK_ICON_SVG;
+      if (meta.locked) btn.dataset.badge = 'PROX';
+    } else {
+      btn.textContent = String(i + 1);
+    }
+    btn.addEventListener('click', () => {
+      if (locked) return;
+      closeAllScreens();
+      loadLevel(i);
+    });
+    levelGrid.appendChild(btn);
+  }
+  drawMapPath(positions, viewportW, contentH);
+
+  // Reveal the current/frontier level by scrolling it toward the middle of
+  // the viewport, instead of dumping the player at the top of the trail.
+  mapScroll.scrollTop = Math.max(0, Math.min(contentH - viewportH, currentY - viewportH / 2));
+}
+
+// Drag-to-pan the level map instead of a visible scrollbar: press and hold
+// (mouse or touch), then move up/down to scroll. A click that moved past a
+// small threshold is treated as a drag and swallowed so it doesn't also
+// select the level node under the pointer.
+(function setupMapDrag() {
+  let dragging = false;
+  let moved = false;
+  let startY = 0;
+  let startScrollTop = 0;
+  let pointerId = null;
+
+  mapScroll.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    dragging = true;
+    moved = false;
+    startY = e.clientY;
+    startScrollTop = mapScroll.scrollTop;
+    pointerId = e.pointerId;
+  });
+
+  mapScroll.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const deltaY = e.clientY - startY;
+    if (!moved && Math.abs(deltaY) > 4) {
+      // Only now does this become an actual drag — capture the pointer so
+      // scrolling keeps tracking it past the container's edges. Capturing
+      // eagerly on every pointerdown instead would reroute the click event
+      // for a plain tap away from the level node under it, since the browser
+      // targets the synthesized click at the capturing element, not the
+      // node — silently swallowing every level selection.
+      moved = true;
+      mapScroll.classList.add('dragging');
+      mapScroll.setPointerCapture(pointerId);
+    }
+    if (moved) mapScroll.scrollTop = startScrollTop - deltaY;
+  });
+
+  function endDrag() {
+    dragging = false;
+    mapScroll.classList.remove('dragging');
+  }
+  mapScroll.addEventListener('pointerup', endDrag);
+  mapScroll.addEventListener('pointercancel', endDrag);
+
+  levelGrid.addEventListener('click', (e) => {
+    if (moved) {
+      e.stopPropagation();
+      e.preventDefault();
+      moved = false;
+    }
+  }, true);
+})();
+
+function showScreen(el) {
+  mainMenu.hidden = true;
+  levelMap.hidden = true;
+  optionsMenu.hidden = true;
+  profileMenu.hidden = true;
+  infoMenu.hidden = true;
+  el.hidden = false;
+  paused = true;
+}
+
+function closeAllScreens() {
+  mainMenu.hidden = true;
+  levelMap.hidden = true;
+  optionsMenu.hidden = true;
+  profileMenu.hidden = true;
+  infoMenu.hidden = true;
+  paused = false;
+}
+
+function openLevelMap() {
+  showScreen(levelMap);
+  buildLevelGrid();
+}
+
+function openOptionsMenu() {
+  showScreen(optionsMenu);
+}
+
+function openProfileMenu() {
+  showScreen(profileMenu);
+  refreshProfileScreen();
+}
+
+function openInfoMenu() {
+  showScreen(infoMenu);
+}
+
+document.addEventListener('click', e => {
+  const btn = e.target.closest('#playBtn, #mapMenuBtn, #optionsMenuBtn, #profileMenuBtn, #infoMenuBtn');
+  if (!btn) return;
+  if (btn.id === 'playBtn') {
+    closeAllScreens();
+    loadLevel(Math.max(0, unlockedLevels - 1));
+  } else if (btn.id === 'mapMenuBtn') {
+    openLevelMap();
+  } else if (btn.id === 'optionsMenuBtn') {
+    openOptionsMenu();
+  } else if (btn.id === 'profileMenuBtn') {
+    openProfileMenu();
+  } else if (btn.id === 'infoMenuBtn') {
+    openInfoMenu();
+  }
+});
+document.getElementById('mapBtn').addEventListener('click', () => { if (level) openLevelMap(); });
+document.getElementById('optionsBtn').addEventListener('click', () => { if (level) openOptionsMenu(); });
+document.getElementById('menuFromOptionsBtn').addEventListener('click', () => showScreen(mainMenu));
+document.querySelectorAll('[data-close]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    closeAllScreens();
+    if (!level) mainMenu.hidden = false;
+  });
+});
+
+async function initMenus() {
+  try {
+    const meta = await fetchLevelsMeta();
+    totalLevels = meta.total_levels;
+    levelsMeta = meta.levels;
+  } catch (e) {
+    console.warn(e);
+  }
+  try {
+    const progress = await fetchProgress();
+    unlockedLevels = progress.unlocked;
+  } catch (e) {
+    console.warn(e);
+  }
+}
+
 async function submitFinalScore() {
   if (!API_BASE_URL) return;
   const payload = {
     player: localStorage.getItem('notTrollPlayer') || 'Anonimo',
     deaths: totalDeaths,
-    levels_completed: LEVELS.length,
+    levels_completed: totalLevels,
     score: Math.max(0, 10000 - totalDeaths * 100),
   };
   try {
@@ -150,236 +678,83 @@ const CAM_SMOOTH = 8;          // higher = camera catches up to target faster
 const GROUND_LIFT = 90;        // shift the whole world up, leaving a clear strip at the
                                 // bottom of the canvas for the overlaid touch controls
 
-// ---------- Level definitions ----------
-// Coordinate space: y grows downward. Ground baseline around y=500.
-// Trap types: solid, spike, hidden_spike, fake_floor, crumble, saw, wall_spike
-function rect(x, y, w, h) { return { x, y, w, h }; }
-
-const LEVELS = [
-  // Level 1 — tutorial: run and jump
-  {
-    name: 'Nivel 1',
-    hint: 'Flechas / A-D para moverte, Espacio para saltar',
-    width: 1400,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1320, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 500, 40), type: 'solid' },
-      { ...rect(560, 500, 300, 40), type: 'solid' },
-      { ...rect(920, 460, 200, 40), type: 'solid' },
-      { ...rect(1180, 500, 220, 40), type: 'solid' },
-    ],
-    hazards: [
-      { ...rect(500, 480, 60, 60), type: 'spike' },
-    ],
-  },
-
-  // Level 2 — gaps and a spike pit
-  {
-    name: 'Nivel 2',
-    hint: 'Cuidado con los huecos',
-    width: 1600,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1520, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 300, 40), type: 'solid' },
-      { ...rect(400, 500, 220, 40), type: 'solid' },
-      { ...rect(720, 460, 160, 40), type: 'solid' },
-      { ...rect(980, 500, 160, 40), type: 'solid' },
-      { ...rect(1240, 440, 160, 40), type: 'solid' },
-      { ...rect(1480, 500, 120, 40), type: 'solid' },
-    ],
-    hazards: [
-      { ...rect(300, 520, 100, 20), type: 'spike' },
-      { ...rect(620, 520, 100, 20), type: 'spike' },
-      { ...rect(880, 520, 100, 20), type: 'spike' },
-      { ...rect(1140, 520, 100, 20), type: 'spike' },
-    ],
-  },
-
-  // Level 3 — introduces the hidden spike trap (looks like normal floor)
-  {
-    name: 'Nivel 3',
-    hint: '¿Ese piso se ve... demasiado normal?',
-    width: 1500,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1420, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 400, 40), type: 'solid' },
-      { ...rect(400, 500, 200, 40), type: 'hidden_spike', triggerX: 430, delay: 0.28 },
-      { ...rect(600, 500, 260, 40), type: 'solid' },
-      { ...rect(940, 500, 160, 40), type: 'hidden_spike', triggerX: 960, delay: 0.22 },
-      { ...rect(1100, 500, 350, 40), type: 'solid' },
-    ],
-    hazards: [],
-  },
-
-  // Level 4 — more hidden spikes, tighter timing
-  {
-    name: 'Nivel 4',
-    hint: 'Aprende el patrón, no confíes en tus ojos',
-    width: 1600,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1520, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 300, 40), type: 'solid' },
-      { ...rect(300, 500, 180, 40), type: 'hidden_spike', triggerX: 330, delay: 0.25 },
-      { ...rect(480, 500, 200, 40), type: 'solid' },
-      { ...rect(680, 460, 160, 40), type: 'hidden_spike', triggerX: 700, delay: 0.2 },
-      { ...rect(840, 460, 160, 40), type: 'solid' },
-      { ...rect(1000, 500, 200, 40), type: 'hidden_spike', triggerX: 1030, delay: 0.25 },
-      { ...rect(1200, 500, 340, 40), type: 'solid' },
-    ],
-    hazards: [],
-  },
-
-  // Level 5 — fake floor (looks identical to solid ground, but you fall through)
-  {
-    name: 'Nivel 5',
-    hint: 'No todo lo que parece sólido lo es',
-    width: 1500,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1420, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 350, 40), type: 'solid' },
-      { ...rect(350, 500, 100, 40), type: 'fake_floor' },
-      { ...rect(450, 500, 340, 40), type: 'solid' },
-      { ...rect(790, 500, 100, 40), type: 'fake_floor' },
-      { ...rect(890, 500, 610, 40), type: 'solid' },
-    ],
-    hazards: [
-      { ...rect(-50, 620, 2000, 40), type: 'void' },
-    ],
-  },
-
-  // Level 6 — crumbling floor
-  {
-    name: 'Nivel 6',
-    hint: 'Corre antes de que se caiga',
-    width: 1600,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1520, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 300, 40), type: 'solid' },
-      { ...rect(300, 500, 120, 40), type: 'crumble', delay: 0.35 },
-      { ...rect(420, 500, 120, 40), type: 'crumble', delay: 0.35 },
-      { ...rect(540, 500, 120, 40), type: 'crumble', delay: 0.35 },
-      { ...rect(700, 460, 300, 40), type: 'solid' },
-      { ...rect(1080, 500, 160, 40), type: 'crumble', delay: 0.3 },
-      { ...rect(1300, 500, 300, 40), type: 'solid' },
-    ],
-    hazards: [
-      { ...rect(-50, 620, 2000, 40), type: 'void' },
-    ],
-  },
-
-  // Level 7 — moving saw
-  {
-    name: 'Nivel 7',
-    hint: 'La sierra no perdona',
-    width: 1600,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1520, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 1600, 40), type: 'solid' },
-    ],
-    hazards: [
-      { ...rect(-50, 620, 2000, 40), type: 'void_disabled' }, // unused, kept for symmetry
-    ],
-    saws: [
-      { x: 500, y: 470, r: 22, minX: 400, maxX: 700, speed: 160 },
-      { x: 1000, y: 470, r: 22, minX: 900, maxX: 1300, speed: 220 },
-    ],
-  },
-
-  // Level 8 — wall spikes that shoot out when you pass
-  {
-    name: 'Nivel 8',
-    hint: 'Las paredes también muerden',
-    width: 1600,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1520, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 1600, 40), type: 'solid' },
-    ],
-    hazards: [],
-    wallSpikes: [
-      // short, ground-level spikes — clear jump apex by a wide margin, and a narrower reach
-      // means a jump timed anywhere near the wall clears past it, not just a frame-perfect window
-      { x: 500, y: 430, w: 24, h: 70, reach: 55, triggerX: 470, delay: 0.25, dir: 1 },
-      { x: 1000, y: 430, w: 24, h: 70, reach: 55, triggerX: 970, delay: 0.25, dir: 1 },
-    ],
-  },
-
-  // Level 9 — everything combined
-  {
-    name: 'Nivel 9 — Prueba final',
-    hint: 'Todo lo aprendido, junto',
-    width: 2000,
-    spawn: { x: 60, y: 440 },
-    goal: rect(1920, 400, 50, 100),
-    platforms: [
-      { ...rect(0, 500, 300, 40), type: 'solid' },
-      { ...rect(300, 500, 160, 40), type: 'hidden_spike', triggerX: 330, delay: 0.22 },
-      { ...rect(460, 500, 160, 40), type: 'crumble', delay: 0.3 },
-      { ...rect(620, 460, 200, 40), type: 'solid' },
-      { ...rect(820, 460, 100, 40), type: 'fake_floor' },
-      { ...rect(920, 460, 60, 40), type: 'solid' },
-      { ...rect(980, 500, 260, 40), type: 'solid' },
-      { ...rect(1240, 500, 160, 40), type: 'hidden_spike', triggerX: 1270, delay: 0.2 },
-      { ...rect(1400, 460, 260, 40), type: 'solid' },
-      { ...rect(1660, 460, 160, 40), type: 'crumble', delay: 0.28 },
-      { ...rect(1820, 500, 200, 40), type: 'solid' },
-    ],
-    hazards: [
-      { ...rect(-50, 620, 2200, 40), type: 'void' },
-    ],
-    saws: [
-      { x: 720, y: 430, r: 20, minX: 640, maxX: 800, speed: 180 },
-    ],
-    wallSpikes: [
-      { x: 1500, y: 430, w: 24, h: 70, reach: 55, triggerX: 1470, delay: 0.22, dir: 1 },
-    ],
-  },
-];
-
-// Levels above are authored against the original baseline (ground ~y=500).
-// Lift every y-coordinate up by GROUND_LIFT so the bottom of the canvas stays
-// clear for the touch controls, without hand-editing each level's numbers —
-// a uniform shift preserves every relative distance (gaps, ledge heights,
-// spawn-to-ground clearance) exactly as authored.
-for (const lvl of LEVELS) {
-  lvl.spawn.y -= GROUND_LIFT;
-  lvl.goal.y -= GROUND_LIFT;
-  for (const p of lvl.platforms || []) p.y -= GROUND_LIFT;
-  for (const h of lvl.hazards || []) {
-    if (h.type === 'void') continue; // deliberately far below the screen — leave it there
-    h.y -= GROUND_LIFT;
+// ---------- Remote level loading ----------
+async function fetchLevel(index) {
+  if (!API_BASE_URL) {
+    throw new Error('Configura window.API_BASE_URL para cargar niveles desde el backend.');
   }
-  for (const s of lvl.saws || []) s.y -= GROUND_LIFT;
-  for (const w of lvl.wallSpikes || []) w.y -= GROUND_LIFT;
+  const res = await fetch(API_BASE_URL + '/levels/' + index + '?player_id=' + encodeURIComponent(PLAYER_ID));
+  if (!res.ok) throw new Error('No se pudo cargar el nivel.');
+  return res.json();
 }
 
 // ---------- Runtime state ----------
 let levelIndex = 0;
+let totalLevels = 0;
 let level, player, camX, camTarget, deaths, totalDeaths, particles, stars, shake, portalMotes;
 let saws = [], wallSpikes = [], platformState = [];
-let state = 'intro'; // intro | playing | dead | complete
+let fallingBlocks = [], bombs = [], teleporters = [], runWall = null;
+let state = 'menu'; // menu | intro | playing | dead | complete
 let stateTimer = 0;
 let flash = 0; // full-screen flash overlay alpha, decays each frame
 let portalCenter = null, pullStart = null, completeDuration = 1.1;
+let advancingLevel = false;
+camX = 0;
+deaths = 0;
+totalDeaths = 0;
+particles = [];
+stars = [];
+shake = { t: 0, mag: 0 };
 
-function loadLevel(i) {
-  levelIndex = i;
-  level = LEVELS[levelIndex];
-  deaths = 0;
-  if (i === 0) totalDeaths = 0;
-  levelLabel.textContent = level.name;
-  deathLabel.textContent = 'Muertes: 0';
-  stars = makeStars(level.width);
-  portalMotes = makePortalMotes();
-  resetEntities();
-  showIntro();
+async function loadLevel(i) {
+  try {
+    advancingLevel = false;
+    state = 'loading';
+    overlayTitle.textContent = 'Cargando...';
+    overlaySub.textContent = '';
+    overlayTitle.classList.add('show');
+    const data = await fetchLevel(i);
+    levelIndex = data.index;
+    totalLevels = data.total_levels;
+    level = data.level;
+    deaths = 0;
+    if (i === 0) totalDeaths = 0;
+    levelLabel.textContent = level.name;
+    deathLabel.textContent = 'Muertes: 0';
+    progressFill.style.width = '0%';
+    stars = makeStars(level.width);
+    portalMotes = makePortalMotes();
+    resetEntities();
+    showIntro();
+  } catch (e) {
+    advancingLevel = false;
+    state = 'error';
+    levelLabel.textContent = 'API requerida';
+    deathLabel.textContent = 'Muertes: 0';
+    overlayTitle.textContent = 'Backend no configurado';
+    overlaySub.textContent = e.message;
+    overlayTitle.classList.add('show');
+    overlaySub.classList.add('show');
+    console.error(e);
+  }
+}
+
+async function advanceAfterComplete() {
+  if (advancingLevel) return;
+  advancingLevel = true;
+  const next = levelIndex + 1;
+  const nextMeta = levelsMeta[next];
+  const reachedEnd = next >= totalLevels || (nextMeta && nextMeta.locked);
+  if (reachedEnd) {
+    await submitFinalScore();
+    await saveProgress(Math.min(totalLevels, unlockedLevels));
+    await loadLevel(0);
+    return;
+  }
+  if (next + 1 > unlockedLevels) {
+    await saveProgress(next + 1);
+  }
+  await loadLevel(next);
 }
 
 function makePortalMotes() {
@@ -426,6 +801,10 @@ function resetEntities() {
     squashX: 1, squashY: 1,
     animTime: 0,
     rotation: 0,
+    teleportCooldown: 0,
+    groundType: null,
+    groundPlatform: null,
+    bounced: false,
   };
   camX = player.x - W / 2;
   camTarget = camX;
@@ -446,11 +825,28 @@ function resetEntities() {
       // narrow danger strip inside the platform — wide enough to notice, narrow enough to jump over
       spikeX: p.type === 'hidden_spike' ? p.x + p.w / 2 - spikeW / 2 : 0,
       shardsSpawned: false,
+      falling: false,
+      fallVy: 0,
+      dir: 1,
+      baseX: p.x,
+      baseY: p.y,
     };
   });
+  fallingBlocks = (level.fallingBlocks || []).map(b => ({ ...b, state: 'idle', t: 0, curY: b.y, vy: 0, gone: false }));
+  bombs = (level.bombs || []).map(b => ({
+    ...b,
+    state: 'idle', t: 0,
+    curX: b.kind === 'side' ? b.fromX : b.x,
+    curY: b.y,
+    vy: 0,
+    gone: false,
+  }));
+  teleporters = (level.teleporters || []).map(tp => ({ ...tp }));
+  runWall = level.runWall ? { ...level.runWall, x: level.runWall.startX } : null;
 }
 
 function restartLevel() {
+  if (!level) return;
   deaths++;
   totalDeaths++;
   deathLabel.textContent = 'Muertes: ' + deaths;
@@ -549,16 +945,21 @@ function frame(now) {
 
   update(dt);
   render();
+  updateMusicPlayback();
   requestAnimationFrame(frame);
 }
 
 function update(dt) {
+  if (paused) return;
   updateShake(dt);
   flash = Math.max(0, flash - dt * 1.8);
 
   if (state === 'intro') {
     stateTimer -= dt;
     if (stateTimer <= 0) state = 'playing';
+    return;
+  }
+  if (state === 'menu' || state === 'loading' || state === 'error') {
     return;
   }
   if (state === 'complete') {
@@ -573,13 +974,7 @@ function update(dt) {
     updateParticles(dt);
     stateTimer -= dt;
     if (stateTimer <= 0) {
-      const next = levelIndex + 1;
-      if (next >= LEVELS.length) {
-        submitFinalScore();
-        loadLevel(0);
-      } else {
-        loadLevel(next);
-      }
+      advanceAfterComplete();
     }
     return;
   }
@@ -593,8 +988,13 @@ function update(dt) {
   // state === 'playing'
   updatePlayer(dt);
   updateTraps(dt);
+  updateMovingPlatforms(dt);
   updateSaws(dt);
   updateWallSpikes(dt);
+  updateFallingBlocks(dt);
+  updateBombs(dt);
+  updateTeleporters(dt);
+  updateRunWall(dt);
   updateParticles(dt);
   checkHazards();
   checkGoal();
@@ -617,7 +1017,8 @@ function updatePlayer(dt) {
   const right = keys['ArrowRight'] || keys['KeyD'];
   const jumpHeld = keys['Space'] || keys['ArrowUp'] || keys['KeyW'];
   const wasOnGround = player.onGround;
-  const accel = MOVE_ACCEL * (player.onGround ? 1 : AIR_ACCEL_MULT);
+  const onIce = player.onGround && player.groundType === 'ice';
+  const accel = MOVE_ACCEL * (player.onGround ? (onIce ? 0.35 : 1) : AIR_ACCEL_MULT);
 
   if (left && !right) {
     player.vx -= accel * dt;
@@ -626,7 +1027,7 @@ function updatePlayer(dt) {
     player.vx += accel * dt;
     player.facing = 1;
   } else if (player.onGround) {
-    const f = FRICTION * dt;
+    const f = (onIce ? FRICTION * 0.08 : FRICTION) * dt;
     if (player.vx > 0) player.vx = Math.max(0, player.vx - f);
     else if (player.vx < 0) player.vx = Math.min(0, player.vx + f);
   }
@@ -647,10 +1048,11 @@ function updatePlayer(dt) {
   }
 
   let g = GRAVITY;
-  if (player.vy < 0 && !jumpHeld) g *= CUT_GRAVITY_MULT;
+  if (player.vy < 0 && !jumpHeld && !player.bounced) g *= CUT_GRAVITY_MULT;
   else if (player.vy > 0) g *= FALL_GRAVITY_MULT;
   player.vy += g * dt;
   if (player.vy > MAX_FALL) player.vy = MAX_FALL;
+  if (player.bounced && player.vy >= 0) player.bounced = false;
 
   // horizontal move + collision
   player.x += player.vx * dt;
@@ -660,6 +1062,8 @@ function updatePlayer(dt) {
   const impactVy = player.vy;
   player.y += player.vy * dt;
   player.onGround = false;
+  player.groundType = null;
+  player.groundPlatform = null;
   resolveCollisions('y');
 
   if (!wasOnGround && player.onGround) {
@@ -708,13 +1112,28 @@ function resolveCollisions(axis) {
     } else {
       if (player.vy > 0) {
         player.y = p.y - player.h;
-        player.vy = 0;
-        player.onGround = true;
+        if (p.type === 'bounce') {
+          player.vy = -(p.power || 950);
+          player.bounced = true;
+          player.squashX = 0.6; player.squashY = 1.5;
+          spawnDust(player.x + player.w / 2, player.y + player.h, 8);
+          addShake(2, 0.1);
+          Sound.jump();
+        } else {
+          player.vy = 0;
+          player.onGround = true;
+          player.groundType = p.type;
+          player.groundPlatform = p;
+        }
         if (p.type === 'hidden_spike' && !p.triggered) {
           p.triggered = true;
           p.t = 0;
         }
         if (p.type === 'crumble' && !p.triggered) {
+          p.triggered = true;
+          p.t = 0;
+        }
+        if (p.type === 'hidden_bomb' && !p.triggered) {
           p.triggered = true;
           p.t = 0;
         }
@@ -728,6 +1147,10 @@ function resolveCollisions(axis) {
 
 function overlap(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function rect(x, y, w, h) {
+  return { x, y, w, h };
 }
 
 function updateTraps(dt) {
@@ -757,6 +1180,64 @@ function updateTraps(dt) {
         });
       }
     }
+    if (p.type === 'hidden_bomb') {
+      if (!p.triggered && p.triggerX !== undefined && player.x + player.w > p.triggerX) {
+        p.triggered = true;
+        p.t = 0;
+      }
+      if (p.triggered && !p.gone) {
+        p.t += dt;
+        if (p.t >= p.delay) {
+          p.gone = true;
+          const cx = p.x + p.w / 2, cy = p.y;
+          const dist = Math.hypot((player.x + player.w / 2) - cx, (player.y + player.h / 2) - cy);
+          if (!player.dead && dist < (p.blastRadius || 70)) killPlayer('bomb');
+          addShake(7, 0.3);
+          flash = Math.max(flash, 0.35);
+          Sound.boom();
+          spawnBurst(cx, cy, 18, {
+            color: '#ffb347', size: 6, life: 0.5, maxLife: 0.5, speedRange: 320, gravity: 700, type: 'spark',
+          });
+        }
+      }
+    }
+    // Fake floor: the moment the player actually falls through it, the
+    // block itself drops away too instead of just sitting there — sells
+    // the "the floor was never real" gag instead of the player silently
+    // clipping through a static tile.
+    if (p.type === 'fake_floor' && !p.falling && overlap(player, p)) {
+      p.falling = true;
+      p.fallVy = 40;
+      Sound.crumble();
+      spawnBurst(p.x + p.w / 2, p.y + p.h / 2, 12, {
+        color: '#3d6b30', size: 6, life: 0.6, maxLife: 0.6, speedRange: 160, gravity: 1200, type: 'debris',
+      });
+    }
+    if (p.falling && !p.gone) {
+      p.fallVy += 2000 * dt;
+      p.y += p.fallVy * dt;
+      if (p.y > H + 200) p.gone = true;
+    }
+  }
+}
+
+function updateMovingPlatforms(dt) {
+  for (const p of platformState) {
+    if (p.type !== 'moving' || p.gone) continue;
+    const prevX = p.x, prevY = p.y;
+    if (p.axis === 'y') {
+      p.y += p.speed * p.dir * dt;
+      if (p.y >= p.maxY) { p.y = p.maxY; p.dir = -1; }
+      if (p.y <= p.minY) { p.y = p.minY; p.dir = 1; }
+    } else {
+      p.x += p.speed * p.dir * dt;
+      if (p.x >= p.maxX) { p.x = p.maxX; p.dir = -1; }
+      if (p.x <= p.minX) { p.x = p.minX; p.dir = 1; }
+    }
+    if (player.onGround && player.groundPlatform === p) {
+      player.x += p.x - prevX;
+      player.y += p.y - prevY;
+    }
   }
 }
 
@@ -781,6 +1262,114 @@ function updateWallSpikes(dt) {
       w.extend = progress * (w.reach || 90);
     }
   }
+}
+
+function updateFallingBlocks(dt) {
+  for (const b of fallingBlocks) {
+    if (b.gone) continue;
+    if (b.state === 'idle') {
+      if (player.x + player.w > b.triggerX) { b.state = 'warn'; b.t = 0; }
+    } else if (b.state === 'warn') {
+      b.t += dt;
+      if (b.t >= b.delay) { b.state = 'falling'; b.vy = 60; }
+    } else if (b.state === 'falling') {
+      b.vy += 2200 * dt;
+      b.curY += b.vy * dt;
+      if (!player.dead && overlap(player, rect(b.x, b.curY, b.w, b.h))) killPlayer('crush');
+      if (b.curY + b.h >= b.groundY) {
+        b.curY = b.groundY - b.h;
+        b.state = 'landed';
+        b.t = 0;
+        addShake(6, 0.25);
+        Sound.boom();
+        spawnBurst(b.x + b.w / 2, b.groundY, 14, {
+          color: '#8b5a2b', size: 6, life: 0.5, maxLife: 0.5, speedRange: 220, gravity: 900, type: 'debris',
+        });
+      }
+    } else if (b.state === 'landed') {
+      b.t += dt;
+      if (b.t > 0.6) b.gone = true;
+    }
+  }
+}
+
+function updateBombs(dt) {
+  for (const b of bombs) {
+    if (b.gone) continue;
+    if (b.state === 'idle') {
+      if (player.x + player.w > b.triggerX) { b.state = 'warn'; b.t = 0; }
+    } else if (b.state === 'warn') {
+      b.t += dt;
+      if (b.t >= b.delay) {
+        b.state = 'active';
+        if (b.kind === 'sky') { b.curY = b.y; b.vy = 40; }
+      }
+    } else if (b.state === 'active') {
+      if (b.kind === 'sky') {
+        b.vy += 2000 * dt;
+        b.curY += b.vy * dt;
+        const dx = (player.x + player.w / 2) - b.x;
+        const dy = (player.y + player.h / 2) - b.curY;
+        if (!player.dead && Math.hypot(dx, dy) < b.radius) killPlayer('bomb');
+        if (b.curY >= b.groundY) {
+          const bdx = (player.x + player.w / 2) - b.x;
+          const bdy = (player.y + player.h / 2) - b.groundY;
+          if (!player.dead && Math.hypot(bdx, bdy) < (b.blastRadius || b.radius * 1.8)) killPlayer('bomb');
+          addShake(7, 0.3);
+          flash = Math.max(flash, 0.35);
+          Sound.boom();
+          spawnBurst(b.x, b.groundY, 20, {
+            color: '#ffb347', size: 6, life: 0.5, maxLife: 0.5, speedRange: 340, gravity: 600, type: 'spark',
+          });
+          b.gone = true;
+        }
+      } else {
+        b.curX += b.speed * b.dir * dt;
+        const dx = (player.x + player.w / 2) - b.curX;
+        const dy = (player.y + player.h / 2) - b.y;
+        if (!player.dead && Math.hypot(dx, dy) < b.radius) {
+          killPlayer('bomb');
+          addShake(7, 0.3);
+          flash = Math.max(flash, 0.35);
+          Sound.boom();
+          spawnBurst(b.curX, b.y, 20, {
+            color: '#ffb347', size: 6, life: 0.5, maxLife: 0.5, speedRange: 340, gravity: 300, type: 'spark',
+          });
+          b.gone = true;
+        }
+        const outOfBounds = b.dir === 1 ? b.curX > b.toX : b.curX < b.toX;
+        if (outOfBounds) b.gone = true;
+      }
+    }
+  }
+}
+
+function updateTeleporters(dt) {
+  if (player.teleportCooldown > 0) { player.teleportCooldown -= dt; return; }
+  for (const tp of teleporters) {
+    if (overlap(player, tp)) {
+      spawnBurst(player.x + player.w / 2, player.y + player.h / 2, 14, {
+        color: '#8fe9ff', size: 5, life: 0.4, maxLife: 0.4, speedRange: 260, gravity: 0, type: 'spark',
+      });
+      player.x = tp.toX;
+      player.y = tp.toY;
+      player.vx = 0;
+      player.vy = 0;
+      spawnBurst(player.x + player.w / 2, player.y + player.h / 2, 14, {
+        color: '#c9a4ff', size: 5, life: 0.4, maxLife: 0.4, speedRange: 260, gravity: 0, type: 'spark',
+      });
+      player.teleportCooldown = 0.35;
+      addShake(2, 0.15);
+      Sound.pop();
+      break;
+    }
+  }
+}
+
+function updateRunWall(dt) {
+  if (!runWall) return;
+  runWall.x += runWall.speed * dt;
+  if (!player.dead && player.x < runWall.x) killPlayer('crush');
 }
 
 function updateParticles(dt) {
@@ -838,13 +1427,19 @@ function render() {
   }
   ctx.translate(Math.round(-camX + shakeX), Math.round(shakeY));
 
-  drawPlatforms();
-  drawHazardsStatic();
-  drawSaws();
-  drawWallSpikes();
-  drawGoal();
-  if (!player.dead || state === 'dead') drawPlayer();
-  drawParticles();
+  if (level && player) {
+    drawPlatforms();
+    drawHazardsStatic();
+    drawRunWall();
+    drawTeleporters();
+    drawFallingBlocks();
+    drawBombs();
+    drawSaws();
+    drawWallSpikes();
+    drawGoal();
+    if (!player.dead || state === 'dead') drawPlayer();
+    drawParticles();
+  }
 
   ctx.restore();
 
@@ -856,14 +1451,18 @@ function render() {
 }
 
 function drawBackground() {
-  const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#171a33');
-  g.addColorStop(0.6, '#2b2246');
-  g.addColorStop(1, '#3a2a4d');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
+  if (bgImageReady) {
+    ctx.drawImage(bgImage, 0, 0, W, H);
+  } else {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#171a33');
+    g.addColorStop(0.6, '#2b2246');
+    g.addColorStop(1, '#3a2a4d');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
 
-  // stars (far parallax layer)
+  // stars (far parallax layer) — kept as a subtle overlay for depth on top of the art
   const t = performance.now() / 500;
   ctx.fillStyle = '#fff';
   for (const s of stars) {
@@ -875,26 +1474,6 @@ function drawBackground() {
     ctx.fill();
   }
   ctx.globalAlpha = 1;
-
-  // distant mountains (slow parallax)
-  drawParallaxRidge(camX * 0.3, H * 0.62, 140, '#241b3d');
-  // closer hills (medium parallax)
-  drawParallaxRidge(camX * 0.55, H * 0.72, 90, '#2f2350');
-}
-
-function drawParallaxRidge(offset, baseY, amp, color) {
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(0, H);
-  const step = 80;
-  for (let x = -step; x <= W + step; x += step) {
-    const worldX = x + offset;
-    const y = baseY - Math.abs(Math.sin(worldX * 0.004)) * amp - Math.abs(Math.cos(worldX * 0.0021)) * amp * 0.5;
-    ctx.lineTo(x, y);
-  }
-  ctx.lineTo(W, H);
-  ctx.closePath();
-  ctx.fill();
 }
 
 function drawVignette() {
@@ -954,6 +1533,85 @@ function drawPlatforms() {
         ctx.moveTo(p.spikeX, p.y + 2);
         ctx.lineTo(p.spikeX + p.spikeW, p.y + 2);
         ctx.stroke();
+      }
+      continue;
+    }
+    if (p.type === 'ice') {
+      ctx.fillStyle = '#bfe9ff';
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = '#eaf9ff';
+      ctx.fillRect(p.x, p.y, p.w, 6);
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(p.x + p.w * 0.15, p.y + p.h - 4);
+      ctx.lineTo(p.x + p.w * 0.45, p.y + 8);
+      ctx.moveTo(p.x + p.w * 0.55, p.y + p.h - 4);
+      ctx.lineTo(p.x + p.w * 0.85, p.y + 8);
+      ctx.stroke();
+      continue;
+    }
+    if (p.type === 'bounce') {
+      ctx.fillStyle = '#f7b733';
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = '#ffe08a';
+      ctx.fillRect(p.x, p.y, p.w, 6);
+      ctx.strokeStyle = '#c9791a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      const coils = Math.max(2, Math.floor(p.w / 22));
+      for (let i = 0; i < coils; i++) {
+        const cx = p.x + (i + 0.5) * (p.w / coils);
+        ctx.moveTo(cx - 8, p.y + p.h * 0.5);
+        ctx.lineTo(cx, p.y + 10);
+        ctx.lineTo(cx + 8, p.y + p.h * 0.5);
+      }
+      ctx.stroke();
+      continue;
+    }
+    if (p.type === 'moving') {
+      ctx.fillStyle = '#7d8596';
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = '#a8b0c2';
+      ctx.fillRect(p.x, p.y, p.w, 6);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      const rivetY = p.y + p.h - 8;
+      for (let bx = p.x + 8; bx < p.x + p.w; bx += 20) {
+        ctx.beginPath();
+        ctx.arc(bx, rivetY, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // directional arrow showing the axis it travels
+      ctx.fillStyle = 'rgba(200,225,255,0.85)';
+      const acx = p.x + p.w / 2, acy = p.y + p.h / 2;
+      ctx.save();
+      ctx.translate(acx, acy);
+      if (p.axis === 'y') ctx.rotate(p.dir > 0 ? Math.PI / 2 : -Math.PI / 2);
+      else if (p.dir < 0) ctx.rotate(Math.PI);
+      ctx.beginPath();
+      ctx.moveTo(7, 0);
+      ctx.lineTo(-4, -6);
+      ctx.lineTo(-4, 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      continue;
+    }
+    if (p.type === 'stone') {
+      ctx.fillStyle = '#6b6f76';
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = '#888e99';
+      ctx.fillRect(p.x, p.y, p.w, 6);
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+      ctx.lineWidth = 1;
+      const rowH = 12;
+      let row = 0;
+      for (let ry = p.y + 6; ry < p.y + p.h; ry += rowH) {
+        const offset = (row % 2) * 17;
+        for (let bx = p.x + offset; bx < p.x + p.w; bx += 34) {
+          ctx.strokeRect(bx, ry, 34, rowH);
+        }
+        row++;
       }
       continue;
     }
@@ -1038,6 +1696,123 @@ function drawWallSpikes() {
     const bx = w.dir === 1 ? w.x : w.x - w.extend;
     ctx.fillRect(bx, w.y, w.extend, w.h);
   }
+}
+
+function drawFallingBlocks() {
+  for (const b of fallingBlocks) {
+    if (b.gone) continue;
+    if (b.state === 'warn') {
+      const pulse = 0.4 + Math.sin(performance.now() / 90) * 0.3;
+      ctx.fillStyle = `rgba(255,80,80,${0.25 + pulse * 0.25})`;
+      ctx.beginPath();
+      ctx.ellipse(b.x + b.w / 2, b.groundY - 4, b.w * 0.55, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(255,60,60,${0.6 + pulse * 0.4})`;
+      ctx.font = 'bold 20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('!', b.x + b.w / 2, b.groundY - 20);
+      ctx.textAlign = 'start';
+      continue;
+    }
+    if (b.state === 'falling' || b.state === 'landed') {
+      ctx.fillStyle = '#6b4a2b';
+      ctx.fillRect(b.x, b.curY, b.w, b.h);
+      ctx.fillStyle = '#8b5a2b';
+      ctx.fillRect(b.x + 4, b.curY + 4, b.w - 8, b.h - 8);
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(b.x + 3, b.curY + 3, b.w - 6, b.h - 6);
+    }
+  }
+}
+
+function drawBombIcon(x, y, r) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(r * 0.3, -r * 0.8);
+  ctx.lineTo(r * 0.7, -r * 1.4);
+  ctx.stroke();
+  ctx.fillStyle = '#ffb347';
+  ctx.beginPath();
+  ctx.arc(r * 0.7, -r * 1.4, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawBombs() {
+  for (const b of bombs) {
+    if (b.gone) continue;
+    if (b.state === 'warn') {
+      const pulse = 0.4 + Math.sin(performance.now() / 90) * 0.3;
+      if (b.kind === 'sky') {
+        ctx.fillStyle = `rgba(255,140,50,${0.25 + pulse * 0.25})`;
+        ctx.beginPath();
+        ctx.ellipse(b.x, b.groundY - 4, 34, 9, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        const wx = b.dir === 1 ? camX + 26 : camX + W - 26;
+        ctx.fillStyle = `rgba(255,140,50,${0.5 + pulse * 0.5})`;
+        ctx.beginPath();
+        ctx.moveTo(wx, b.y - 14);
+        ctx.lineTo(wx + (b.dir === 1 ? 16 : -16), b.y);
+        ctx.lineTo(wx, b.y + 14);
+        ctx.closePath();
+        ctx.fill();
+      }
+      continue;
+    }
+    if (b.state === 'active') {
+      drawBombIcon(b.kind === 'sky' ? b.x : b.curX, b.kind === 'sky' ? b.curY : b.y, 14);
+    }
+  }
+}
+
+function drawTeleporters() {
+  const t = performance.now() / 500;
+  for (const tp of teleporters) {
+    const cx = tp.x + tp.w / 2, cy = tp.y + tp.h / 2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(t);
+    ctx.strokeStyle = 'rgba(143,233,255,0.8)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, tp.w / 2, tp.h / 2, 0, 0, Math.PI * 1.5);
+    ctx.stroke();
+    ctx.restore();
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = 'rgba(143,233,255,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, tp.w / 2, tp.h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawRunWall() {
+  if (!runWall) return;
+  const fadeStart = Math.max(0, runWall.x - 120);
+  const g = ctx.createLinearGradient(fadeStart, 0, runWall.x, 0);
+  g.addColorStop(0, 'rgba(10,6,20,0)');
+  g.addColorStop(1, 'rgba(10,6,20,0.95)');
+  ctx.fillStyle = g;
+  ctx.fillRect(fadeStart, runWall.y, runWall.x - fadeStart, runWall.h);
+  ctx.fillStyle = '#0a0614';
+  ctx.fillRect(0, runWall.y, fadeStart, runWall.h);
+  ctx.strokeStyle = 'rgba(178,102,255,0.5)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(runWall.x, runWall.y);
+  ctx.lineTo(runWall.x, runWall.y + runWall.h);
+  ctx.stroke();
 }
 
 function drawGoal() {
@@ -1274,5 +2049,5 @@ function drawParticles() {
 }
 
 // ---------- Start ----------
-loadLevel(0);
+initMenus();
 requestAnimationFrame(frame);

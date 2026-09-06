@@ -239,10 +239,10 @@ def login(auth: AuthIn) -> dict:
 
 
 @app.get("/scores", response_model=list[ScoreOut])
-def list_scores(limit: int = 10) -> list[sqlite3.Row]:
+def list_scores(limit: int = 10) -> list[dict]:
     limit = max(1, min(limit, 50))
     with connect() as conn:
-        return conn.execute(
+        rows = conn.execute(
             """
             SELECT id, player, deaths, levels_completed, score, created_at
             FROM scores
@@ -251,10 +251,11 @@ def list_scores(limit: int = 10) -> list[sqlite3.Row]:
             """,
             (limit,),
         ).fetchall()
+    return [dict(row) for row in rows]
 
 
 @app.post("/scores", response_model=ScoreOut, status_code=201)
-def create_score(score: ScoreIn) -> sqlite3.Row:
+def create_score(score: ScoreIn) -> dict:
     player = score.player.strip() or "Anonimo"
     created_at = datetime.now(timezone.utc).isoformat()
     with connect() as conn:
@@ -275,7 +276,7 @@ def create_score(score: ScoreIn) -> sqlite3.Row:
         ).fetchone()
     if row is None:
         raise HTTPException(status_code=500, detail="No se pudo guardar el puntaje")
-    return row
+    return dict(row)
 
 
 if FRONTEND_DIR.exists():

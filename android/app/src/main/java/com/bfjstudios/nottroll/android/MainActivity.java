@@ -11,28 +11,15 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 
-import com.revenuecat.purchases.LogLevel;
-import com.revenuecat.purchases.Purchases;
-import com.revenuecat.purchases.PurchasesConfiguration;
-import com.bfjstudios.nottroll.BuildConfig;
-
 public class MainActivity extends Activity {
 
-    // Public Android SDK key supplied through the local release configuration.
-    private static final String REVENUECAT_API_KEY = BuildConfig.REVENUECAT_API_KEY;
-
     private WebView webView;
+    private SubscriptionBridge subscriptionBridge;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        Purchases.setLogLevel(BuildConfig.DEBUG ? LogLevel.DEBUG : LogLevel.ERROR);
-        boolean billingConfigured = REVENUECAT_API_KEY.startsWith("goog_");
-        if (billingConfigured) {
-            Purchases.configure(new PurchasesConfiguration.Builder(this, REVENUECAT_API_KEY).build());
-        }
 
         webView = new WebView(this);
         setContentView(webView);
@@ -48,7 +35,8 @@ public class MainActivity extends Activity {
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
 
         webView.setWebChromeClient(new WebChromeClient());
-        webView.addJavascriptInterface(new SubscriptionBridge(this, webView), "AndroidBilling");
+        subscriptionBridge = new SubscriptionBridge(this, webView);
+        webView.addJavascriptInterface(subscriptionBridge, "AndroidBilling");
         webView.loadUrl("file:///android_asset/index.html");
     }
 
@@ -90,6 +78,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        subscriptionBridge.endConnection();
         webView.destroy();
         super.onDestroy();
     }

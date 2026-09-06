@@ -1,6 +1,6 @@
 # Copiar como release.properties (ignorado por Git).
-# Clave PUBLICA del SDK Android de RevenueCat, nunca una clave secreta.
-revenueCatAndroidApiKey=goog_REEMPLAZAR
+# Por ahora la app usa Google Play Billing directo (ver SubscriptionBridge.kt),
+# sin RevenueCat, asi que no hace falta ninguna clave de API aqui.
 # Ruta relativa a android/ o absoluta con barras /.
 storeFile=upload-key.jks
 storePassword=

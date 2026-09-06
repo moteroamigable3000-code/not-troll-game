@@ -6,7 +6,6 @@ def releasePropertiesFile = rootProject.file('release.properties')
 if (releasePropertiesFile.exists()) {
     releasePropertiesFile.withInputStream { releaseProperties.load(it) }
 }
-def revenueCatKey = releaseProperties.getProperty('revenueCatAndroidApiKey', '')
 def signingFields = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword']
 def hasReleaseSigning = signingFields.every { releaseProperties.getProperty(it) }
 
@@ -18,12 +17,9 @@ android {
         applicationId 'com.bfjgames.llc'
         minSdkVersion 23
         targetSdkVersion 36
-        versionCode 1
-        versionName '1.0'
-        buildConfigField 'String', 'REVENUECAT_API_KEY', '"' + revenueCatKey.replace('\\', '\\\\').replace('"', '\\"') + '"'
+        versionCode 3
+        versionName '1.0.2'
     }
-
-    buildFeatures { buildConfig true }
 
     signingConfigs {
         release {
@@ -57,9 +53,8 @@ android {
 }
 
 dependencies {
-    // Wraps Google Play Billing (Android) behind RevenueCat's cross-platform
-    // subscription API — see SubscriptionBridge.kt. The web build uses the
-    // matching @revenuecat/purchases-js SDK (loaded in index.html) so both
-    // platforms share one entitlement check keyed by our own player_id.
-    implementation 'com.revenuecat.purchases:purchases:10.20.0'
+    // Google Play Billing Library directly — no RevenueCat layer for now
+    // (see SubscriptionBridge.kt). A cross-platform entitlement backend via
+    // RevenueCat may be reconnected later; see PLAY_RELEASE.md.
+    implementation 'com.android.billingclient:billing:8.3.0'
 }

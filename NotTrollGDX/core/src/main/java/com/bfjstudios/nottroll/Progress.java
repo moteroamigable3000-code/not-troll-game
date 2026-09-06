@@ -118,6 +118,11 @@ public class Progress {
         return prefs.getInteger("checkpointCharges", 0);
     }
 
+    public void addCheckpointCharge() {
+        prefs.putInteger("checkpointCharges", getCheckpointCharges() + 1);
+        prefs.flush();
+    }
+
     /** Returns true if the purchase succeeded. */
     public boolean buyCheckpointCharge(int price) {
         if (!spendCoins(price)) return false;

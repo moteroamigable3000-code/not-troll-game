@@ -76,6 +76,7 @@ public class GameScreen extends ScreenAdapter {
     private boolean advancingLevel;
     private int deaths;
     private boolean hasCheckpoint;
+    private boolean checkpointUsedThisLevel;
     private float checkpointX, checkpointY;
     private float sawSpin;
     private float bgAnimT;
@@ -237,6 +238,7 @@ public class GameScreen extends ScreenAdapter {
         levelDef = game.assets.levels.get(index);
         deaths = 0;
         hasCheckpoint = false;
+        checkpointUsedThisLevel = false;
         if (index == 0) game.totalDeaths = 0;
 
         levelLabel.setText(levelDef.name);
@@ -318,6 +320,7 @@ public class GameScreen extends ScreenAdapter {
     private void placeCheckpoint() {
         if (!"playing".equals(state) || player == null || !player.onGround) return;
         if (!game.progress.useCheckpointCharge()) return;
+        checkpointUsedThisLevel = true;
         hasCheckpoint = true;
         checkpointX = player.x;
         checkpointY = player.y;
@@ -863,6 +866,11 @@ public class GameScreen extends ScreenAdapter {
     private void advanceAfterComplete() {
         if (advancingLevel) return;
         advancingLevel = true;
+        // Refund exactly one used flag after completing the level: one used
+        // flag is recovered, while two or more cost one net flag.
+        if (checkpointUsedThisLevel) {
+            game.progress.addCheckpointCharge();
+        }
         int next = levelIndex + 1;
         boolean reachedEnd = next >= game.assets.levels.size || game.assets.levels.get(next).locked;
         if (next + 1 > game.progress.getUnlockedLevels()) {

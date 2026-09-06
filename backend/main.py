@@ -10,12 +10,14 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from levels import level_count, level_meta, playable_level_count, shifted_level
 
 
 BASE_DIR = Path(__file__).resolve().parent
+FRONTEND_DIR = Path(os.getenv("FRONTEND_DIR", BASE_DIR.parent))
 DB_PATH = Path(os.getenv("DATABASE_PATH", BASE_DIR / "scores.db"))
 DEFAULT_ORIGINS = [
     "http://127.0.0.1:5500",
@@ -274,3 +276,7 @@ def create_score(score: ScoreIn) -> sqlite3.Row:
     if row is None:
         raise HTTPException(status_code=500, detail="No se pudo guardar el puntaje")
     return row
+
+
+if FRONTEND_DIR.exists():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

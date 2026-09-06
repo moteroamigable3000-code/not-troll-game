@@ -258,7 +258,8 @@ if (btnLeft && btnRight && btnJump) {
 }
 
 // ---------- Optional backend API ----------
-const API_BASE_URL = (window.API_BASE_URL || '').replace(/\/$/, '');
+const PUBLIC_API_BASE_URL = 'https://agriculture-tariff-defendant-fabric.trycloudflare.com';
+const API_BASE_URL = (window.API_BASE_URL || PUBLIC_API_BASE_URL).replace(/\/$/, '');
 
 function getPlayerId() {
   let id = localStorage.getItem('notTrollPlayerId');
@@ -732,7 +733,7 @@ async function loadLevel(i) {
     state = 'error';
     levelLabel.textContent = 'API requerida';
     deathLabel.textContent = 'Muertes: 0';
-    overlayTitle.textContent = 'Backend no configurado';
+    overlayTitle.textContent = API_BASE_URL ? 'Servidor no responde' : 'Backend no configurado';
     overlaySub.textContent = e.message;
     overlayTitle.classList.add('show');
     overlaySub.classList.add('show');

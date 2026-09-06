@@ -1,0 +1,20 @@
+apply plugin: 'application'
+
+mainClassName = 'com.bfjstudios.nottroll.desktop.DesktopLauncher'
+application {
+    mainClass = 'com.bfjstudios.nottroll.desktop.DesktopLauncher'
+}
+
+sourceSets.main.resources.srcDirs += [ rootProject.file('assets').path ]
+
+dependencies {
+    implementation project(':core')
+    api "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
+    api "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
+    api "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-desktop"
+}
+
+run {
+    workingDir = rootProject.file('assets').path
+    setIgnoreExitValue(true)
+}

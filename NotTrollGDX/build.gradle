@@ -1,0 +1,34 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.9.3'
+    }
+}
+
+allprojects {
+    apply plugin: 'eclipse'
+
+    version = '1.0'
+    ext {
+        appName = 'NotTrollGame'
+        gdxVersion = '1.14.2'
+    }
+
+    repositories {
+        mavenLocal()
+        mavenCentral()
+        google()
+        maven { url 'https://s01.oss.sonatype.org' }
+        maven { url 'https://oss.sonatype.org/content/repositories/snapshots/' }
+    }
+}
+
+configure(subprojects - project(':android')) {
+    apply plugin: 'java-library'
+    sourceCompatibility = 17
+    targetCompatibility = 17
+}

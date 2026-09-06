@@ -258,8 +258,55 @@ if (btnLeft && btnRight && btnJump) {
 }
 
 // ---------- Optional backend API ----------
-const PUBLIC_API_BASE_URL = 'https://agriculture-tariff-defendant-fabric.trycloudflare.com';
+// Hardcoded so the game keeps talking to our own server even when it's
+// embedded on a game portal (CrazyGames/Poki/itch.io load this file from
+// their own origin, so relying on location.origin would point nowhere).
+const PUBLIC_API_BASE_URL = 'https://evildevil-ghost.online';
 const API_BASE_URL = (window.API_BASE_URL || PUBLIC_API_BASE_URL).replace(/\/$/, '');
+
+// ---------- Ad platform adapter ----------
+// Detects the CrazyGames or Poki SDK if this build is hosted on their
+// portal (they're loaded via a <script> tag added only to that portal's
+// build). No-ops everywhere else (our own domain, itch.io), so this is
+// always safe to call.
+const Ads = (() => {
+  const cg = () => window.CrazyGames && window.CrazyGames.SDK;
+  const poki = () => window.PokiSDK;
+
+  function init() {
+    if (cg()) return cg().init().catch(() => {});
+    if (poki()) return poki().init().catch(() => {});
+    return Promise.resolve();
+  }
+  function loadingStop() {
+    try {
+      if (cg()) cg().game.loadingStop();
+      if (poki()) poki().gameLoadingFinished();
+    } catch (e) { /* SDK not fully ready, ignore */ }
+  }
+  function gameplayStart() {
+    try {
+      if (cg()) cg().game.gameplayStart();
+      if (poki()) poki().gameplayStart();
+    } catch (e) { /* ignore */ }
+  }
+  function gameplayStop() {
+    try {
+      if (cg()) cg().game.gameplayStop();
+      if (poki()) poki().gameplayStop();
+    } catch (e) { /* ignore */ }
+  }
+  function midgameBreak() {
+    try {
+      if (cg()) { cg().ad.requestAd('midgame'); return Promise.resolve(); }
+      if (poki()) return poki().commercialBreak().catch(() => {});
+    } catch (e) { /* ignore */ }
+    return Promise.resolve();
+  }
+
+  init().then(loadingStop);
+  return { gameplayStart, gameplayStop, midgameBreak };
+})();
 
 function getPlayerId() {
   let id = localStorage.getItem('notTrollPlayerId');
@@ -574,6 +621,7 @@ function showScreen(el) {
   infoMenu.hidden = true;
   el.hidden = false;
   paused = true;
+  Ads.gameplayStop();
 }
 
 function closeAllScreens() {
@@ -583,6 +631,7 @@ function closeAllScreens() {
   profileMenu.hidden = true;
   infoMenu.hidden = true;
   paused = false;
+  if (level) Ads.gameplayStart();
 }
 
 function openLevelMap() {
@@ -747,6 +796,8 @@ async function advanceAfterComplete() {
   const next = levelIndex + 1;
   const nextMeta = levelsMeta[next];
   const reachedEnd = next >= totalLevels || (nextMeta && nextMeta.locked);
+  Ads.gameplayStop();
+  await Ads.midgameBreak();
   if (reachedEnd) {
     await submitFinalScore();
     await saveProgress(Math.min(totalLevels, unlockedLevels));
@@ -854,6 +905,7 @@ function restartLevel() {
   deathLabel.textContent = 'Muertes: ' + deaths;
   resetEntities();
   state = 'playing';
+  Ads.gameplayStart();
 }
 
 function showIntro() {
@@ -958,7 +1010,7 @@ function update(dt) {
 
   if (state === 'intro') {
     stateTimer -= dt;
-    if (stateTimer <= 0) state = 'playing';
+    if (stateTimer <= 0) { state = 'playing'; Ads.gameplayStart(); }
     return;
   }
   if (state === 'menu' || state === 'loading' || state === 'error') {

@@ -19,14 +19,14 @@ from levels import level_count, level_meta, playable_level_count, shifted_level
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = Path(os.getenv("FRONTEND_DIR", BASE_DIR.parent))
 DB_PATH = Path(os.getenv("DATABASE_PATH", BASE_DIR / "scores.db"))
-DEFAULT_ORIGINS = [
-    "http://127.0.0.1:5500",
-    "http://localhost:5500",
-    "https://moteroamigable3000-code.github.io",
-]
+DEFAULT_ORIGINS = ["*"]
 
 
 def get_allowed_origins() -> list[str]:
+    # Wildcard is safe here: allow_credentials=False below, so no cookies or
+    # auth headers ever ride along, and every endpoint is already public.
+    # This lets the game load levels/scores when embedded on any game
+    # portal (CrazyGames, Poki, itch.io, ...) without pre-listing origins.
     configured = os.getenv("CORS_ORIGINS")
     if not configured:
         return DEFAULT_ORIGINS

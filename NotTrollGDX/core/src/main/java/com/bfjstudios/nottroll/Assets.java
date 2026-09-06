@@ -17,6 +17,7 @@ public class Assets implements Disposable {
     public final Texture backgroundGame;
     public final Texture backgroundMenu;
     public final Texture splashLogo;
+    public final Texture iconStore;
     public final Texture pixel; // 1x1 white, tinted for shape drawing
     public final Texture softCircle; // white radial disc, tinted for smooth UI nodes
 
@@ -38,9 +39,11 @@ public class Assets implements Disposable {
         backgroundGame = new Texture(Gdx.files.internal("FONDO_JUEGO.png"));
         backgroundMenu = new Texture(Gdx.files.internal("FONDO_MENU_OPCIONES.png"));
         splashLogo = new Texture(Gdx.files.internal("EMPRESA.png"));
+        iconStore = new Texture(Gdx.files.internal("ICON_STORE.png"));
         backgroundGame.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
         backgroundMenu.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
         splashLogo.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+        iconStore.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
 
         com.badlogic.gdx.graphics.Pixmap pm = new com.badlogic.gdx.graphics.Pixmap(1, 1, com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888);
         pm.setColor(1, 1, 1, 1);
@@ -134,6 +137,7 @@ public class Assets implements Disposable {
         backgroundGame.dispose();
         backgroundMenu.dispose();
         splashLogo.dispose();
+        iconStore.dispose();
         pixel.dispose();
         softCircle.dispose();
         pxHuge.dispose(); pxLarge.dispose(); pxMed.dispose(); pxSmall.dispose(); pxTiny.dispose(); vtBody.dispose();

@@ -11,6 +11,7 @@ bgImage.src = 'recursos/FONDO_JUEGO.png';
 
 const levelLabel = document.getElementById('levelLabel');
 const deathLabel = document.getElementById('deathLabel');
+const coinLabel = document.getElementById('coinLabel');
 const overlayTitle = document.getElementById('overlayTitle');
 const overlaySub = document.getElementById('overlaySub');
 const progressFill = document.getElementById('progressFill');
@@ -56,6 +57,7 @@ const levelMap = document.getElementById('levelMap');
 const optionsMenu = document.getElementById('optionsMenu');
 const profileMenu = document.getElementById('profileMenu');
 const infoMenu = document.getElementById('infoMenu');
+const shopMenu = document.getElementById('shopMenu');
 const levelGrid = document.getElementById('levelGrid');
 const mapPath = document.getElementById('mapPath');
 const mapScroll = document.getElementById('mapScroll');
@@ -222,6 +224,7 @@ window.addEventListener('keydown', e => {
   }
   keys[e.code] = true;
   if (e.code === 'KeyR') restartLevel();
+  if (e.code === 'KeyC') tryPlaceCheckpoint();
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
 });
 window.addEventListener('keyup', e => keys[e.code] = false);
@@ -308,6 +311,122 @@ const Ads = (() => {
   return { gameplayStart, gameplayStop, midgameBreak };
 })();
 
+// ---------- Subscription: no ads + monthly coins, shared across web/Android ----------
+// The Android app wraps Google Play Billing behind window.AndroidBilling
+// (see SubscriptionBridge.kt) — Play Store policy requires that for digital
+// goods bought inside the app. The web build talks to the same RevenueCat
+// project through the @revenuecat/purchases-js SDK loaded in index.html.
+// Both paths converge on subState so the rest of the game never branches on
+// platform. Requires a logged-in account (see Subscription.purchase) so the
+// same player_id identifies the subscriber on both platforms — Android's
+// WebView storage and a phone's mobile browser storage are separate, so an
+// anonymous per-device id wouldn't carry over.
+// TODO: paste the RevenueCat Web Billing public API key once configured.
+const REVENUECAT_WEB_API_KEY = 'TODO_REVENUECAT_WEB_API_KEY';
+const SUBSCRIPTION_ENTITLEMENT = 'premium';
+const SUBSCRIBER_MONTHLY_COINS = 150;
+
+let subState = { active: false, expiresAt: null };
+let subWebConfigured = false;
+
+const Subscription = (() => {
+  const isAndroid = () => !!window.AndroidBilling;
+  const rc = () => window.Purchases && window.Purchases.Purchases;
+
+  function applyStatus(active, expiresAt) {
+    const period = active && expiresAt ? String(expiresAt).slice(0, 7) : null;
+    subState = { active, expiresAt: expiresAt || null };
+    if (active && period && wallet.subLastCoinPeriod !== period) {
+      wallet.subLastCoinPeriod = period;
+      saveWallet();
+      awardCoins(SUBSCRIBER_MONTHLY_COINS);
+    }
+    renderShop();
+  }
+
+  function identify(playerId) {
+    if (isAndroid()) {
+      try { window.AndroidBilling.identify(playerId); } catch (e) { /* ignore */ }
+      return;
+    }
+    if (subWebConfigured || !rc()) return;
+    subWebConfigured = true;
+    try {
+      rc().configure({ apiKey: REVENUECAT_WEB_API_KEY, appUserId: playerId });
+      refreshStatus();
+    } catch (e) { console.warn('No se pudo iniciar RevenueCat.', e); }
+  }
+
+  async function refreshStatus() {
+    if (isAndroid()) {
+      try { window.AndroidBilling.checkStatus(); } catch (e) { /* ignore */ }
+      return;
+    }
+    if (!rc()) return;
+    try {
+      const info = await rc().getSharedInstance().getCustomerInfo();
+      const ent = info.entitlements.active[SUBSCRIPTION_ENTITLEMENT];
+      applyStatus(!!ent, ent ? ent.expirationDate : null);
+    } catch (e) { console.warn('No se pudo consultar la suscripcion.', e); }
+  }
+
+  async function purchase() {
+    if (!getAccount()) { openProfileMenu(); return; }
+    if (isAndroid()) {
+      try { window.AndroidBilling.purchase(); } catch (e) { /* ignore */ }
+      return;
+    }
+    if (!rc()) return;
+    try {
+      const offerings = await rc().getSharedInstance().getOfferings();
+      const pkg = offerings.current && offerings.current.availablePackages[0];
+      if (!pkg) { console.warn('No hay oferta de suscripcion configurada.'); return; }
+      await rc().getSharedInstance().purchase({ rcPackage: pkg });
+      await refreshStatus();
+    } catch (e) { console.warn('Compra cancelada o fallida.', e); }
+  }
+
+  function manage() {
+    if (isAndroid()) {
+      try { window.AndroidBilling.manage(); } catch (e) { /* ignore */ }
+      return;
+    }
+    window.open('https://play.google.com/store/account/subscriptions', '_blank');
+  }
+
+  return { identify, refreshStatus, purchase, manage, applyStatus };
+})();
+
+// Android posts results back here after a native RevenueCat call (see
+// SubscriptionBridge.kt's window.onAndroidSubscription* callbacks).
+window.onAndroidSubscriptionStatus = (active, expiresAt) => Subscription.applyStatus(active, expiresAt);
+window.onAndroidSubscriptionError = (message) => console.warn('Suscripcion:', message);
+
+// Game portals reject games that offer their own account/login system
+// separate from the portal's own user (CrazyGames and Poki both flag this
+// in their submission rules). Hide the "Perfil" email/password login entry
+// point when running on one of their SDKs; progress still saves fine via
+// the anonymous per-browser player id below. The menu/profile DOM nodes
+// stay in the page either way so the rest of the script can wire them up
+// without null-reference errors — this only hides the button that opens it.
+if ((window.CrazyGames && window.CrazyGames.SDK) || window.PokiSDK) {
+  const profileMenuBtn = document.getElementById('profileMenuBtn');
+  if (profileMenuBtn) profileMenuBtn.hidden = true;
+}
+
+// Real-money purchases (one-time "sin anuncios" + the subscription) only
+// belong on our own domain — every portal (CrazyGames, Poki, itch.io) loads
+// this same file from THEIR origin and forbids a game selling anything
+// outside their own payment system. OWN_HOSTS comes from the inline
+// bootstrap <script> in index.html (shared global scope, same page).
+const REAL_MONEY_ENABLED = typeof OWN_HOSTS !== 'undefined' && OWN_HOSTS.includes(location.hostname);
+if (!REAL_MONEY_ENABLED) {
+  const shopAdsRow = document.getElementById('shopAdsRow');
+  if (shopAdsRow) shopAdsRow.hidden = true;
+  const shopSubRow = document.getElementById('shopSubRow');
+  if (shopSubRow) shopSubRow.hidden = true;
+}
+
 function getPlayerId() {
   let id = localStorage.getItem('notTrollPlayerId');
   if (!id) {
@@ -336,6 +455,93 @@ function setAccountSession(account) {
 function clearAccountSession() {
   localStorage.removeItem('notTrollAccount');
   PLAYER_ID = getPlayerId();
+}
+
+// ---------- Shop: coins, skins, checkpoints ----------
+// Local-only (like Android's Preferences store) — deliberately not synced
+// through the backend, so spending on one device can't be "restored" by
+// reading a stale higher balance back from another.
+const SKINS = {
+  default: { name: 'Negro clasico', color: '#151515', price: 0 },
+  white: { name: 'Blanco fantasma', color: '#f2eefc', price: 60 },
+};
+const CHECKPOINT_PRICE = 25;
+const COINS_PER_LEVEL = 15;
+
+let wallet = { coins: 0, ownedSkins: ['default'], equippedSkin: 'default', adsRemoved: false, checkpointCharges: 0, subLastCoinPeriod: null };
+
+// ---------- Real-money pricing: "sin anuncios" one-time purchase ----------
+// Priced in PEN (the studio's home currency) and converted for display using
+// live exchange rates — no purchase is actually processed yet (see the
+// TODO on shopAdsOffBtn's click handler in renderShop()); this only gets the
+// price right once a gateway is wired (Mercado Pago on web, per the studio's
+// plan of Play Billing on Android / Mercado Pago on web+PC).
+const ADS_OFF_PRICE_PEN = 7.90;
+
+// Country -> ISO currency code for the common markets this game expects
+// traffic from; anything unlisted falls back to USD display.
+const COUNTRY_CURRENCY = {
+  PE: 'PEN', US: 'USD', MX: 'MXN', AR: 'ARS', CO: 'COP', CL: 'CLP', EC: 'USD',
+  BO: 'BOB', UY: 'UYU', PY: 'PYG', VE: 'VES', BR: 'BRL', GB: 'GBP', CA: 'CAD',
+  ES: 'EUR', FR: 'EUR', DE: 'EUR', IT: 'EUR', PT: 'EUR', NL: 'EUR', IE: 'EUR',
+};
+
+let fxRates = null; // { USD: 0.27, EUR: 0.25, ... } per 1 PEN, fetched once, best-effort
+
+async function loadFxRates() {
+  if (fxRates || !REAL_MONEY_ENABLED) return;
+  try {
+    const res = await fetch('https://open.er-api.com/v6/latest/PEN');
+    const data = await res.json();
+    if (data && data.result === 'success' && data.rates) {
+      fxRates = data.rates;
+      // The shop may already be open and rendered with the PEN fallback by
+      // the time this resolves — refresh it in place so the price updates
+      // without the player having to close/reopen the panel.
+      if (shopMenu && !shopMenu.hidden) renderShop();
+    }
+  } catch (e) { /* offline or the FX API is down — formatLocalPrice falls back to PEN */ }
+}
+
+function userCurrency() {
+  const locale = navigator.language || 'es-PE';
+  const country = (locale.split('-')[1] || '').toUpperCase();
+  return COUNTRY_CURRENCY[country] || 'USD';
+}
+
+function formatLocalPrice(penAmount) {
+  const currency = userCurrency();
+  if (currency !== 'PEN' && fxRates && fxRates[currency]) {
+    try {
+      return new Intl.NumberFormat(navigator.language, { style: 'currency', currency })
+        .format(penAmount * fxRates[currency]);
+    } catch (e) { /* browser doesn't recognize this currency code */ }
+  }
+  return 'S/ ' + penAmount.toFixed(2);
+}
+
+function loadWallet() {
+  try {
+    const raw = localStorage.getItem('notTrollWallet');
+    if (raw) wallet = { ...wallet, ...JSON.parse(raw) };
+    if (!Object.prototype.hasOwnProperty.call(SKINS, wallet.equippedSkin)) {
+      wallet.equippedSkin = 'default';
+    }
+  } catch (e) { /* corrupt/old data — keep defaults */ }
+}
+
+function saveWallet() {
+  localStorage.setItem('notTrollWallet', JSON.stringify(wallet));
+}
+
+function awardCoins(amount) {
+  wallet.coins += amount;
+  saveWallet();
+  updateCoinLabel();
+}
+
+function updateCoinLabel() {
+  if (coinLabel) coinLabel.textContent = '🪙 ' + wallet.coins;
 }
 
 const account0 = getAccount();
@@ -412,9 +618,90 @@ function refreshProfileScreen() {
   }
 }
 
+function renderShop() {
+  document.getElementById('shopCoinBalance').textContent = '🪙 ' + wallet.coins;
+
+  const list = document.getElementById('shopSkinsList');
+  list.innerHTML = '';
+  for (const id in SKINS) {
+    const skin = SKINS[id];
+    const row = document.createElement('div');
+    row.className = 'optionRow';
+    const swatch = document.createElement('span');
+    swatch.className = 'skinSwatch';
+    swatch.style.background = skin.color;
+    const label = document.createElement('span');
+    label.textContent = skin.name;
+    const left = document.createElement('span');
+    left.className = 'skinSwatchLabel';
+    left.appendChild(swatch);
+    left.appendChild(label);
+    const btn = document.createElement('button');
+    btn.className = 'menuBtn';
+    const owned = wallet.ownedSkins.includes(id);
+    const equipped = wallet.equippedSkin === id;
+    if (equipped) {
+      btn.textContent = 'Equipado';
+      btn.disabled = true;
+    } else if (owned) {
+      btn.textContent = 'Equipar';
+      btn.onclick = () => { wallet.equippedSkin = id; saveWallet(); renderShop(); };
+    } else {
+      btn.textContent = 'Comprar (' + skin.price + ')';
+      btn.disabled = wallet.coins < skin.price;
+      btn.onclick = () => {
+        if (wallet.coins < skin.price) return;
+        wallet.coins -= skin.price;
+        wallet.ownedSkins.push(id);
+        wallet.equippedSkin = id;
+        saveWallet();
+        updateCoinLabel();
+        Sound.pop();
+        renderShop();
+      };
+    }
+    row.appendChild(left);
+    row.appendChild(btn);
+    list.appendChild(row);
+  }
+
+  document.getElementById('shopCheckpointCount').textContent = wallet.checkpointCharges;
+  const cpBtn = document.getElementById('shopCheckpointBtn');
+  cpBtn.textContent = 'Comprar (' + CHECKPOINT_PRICE + ')';
+  cpBtn.disabled = wallet.coins < CHECKPOINT_PRICE;
+  cpBtn.onclick = () => {
+    if (wallet.coins < CHECKPOINT_PRICE) return;
+    wallet.coins -= CHECKPOINT_PRICE;
+    wallet.checkpointCharges++;
+    saveWallet();
+    updateCoinLabel();
+    Sound.pop();
+    renderShop();
+  };
+
+  renderSubscription();
+}
+
+function renderSubscription() {
+  const label = document.getElementById('shopSubLabel');
+  const btn = document.getElementById('shopAdsOffBtn');
+  if (!label || !btn) return;
+  if (subState.active) {
+    const until = subState.expiresAt ? new Date(subState.expiresAt).toLocaleDateString() : '';
+    label.textContent = 'SUSCRIPCIÓN PREMIUM (Cero Anunciós + ' + SUBSCRIBER_MONTHLY_COINS + ' monedas /mes)' + (until ? ' — Activa hasta ' + until : ' — Activa');
+    btn.textContent = 'Gestionar';
+    btn.onclick = () => Subscription.manage();
+  } else {
+    label.textContent = 'SUSCRIPCIÓN PREMIUM (Cero Anunciós + ' + SUBSCRIBER_MONTHLY_COINS + ' monedas /mes)';
+    btn.textContent = getAccount() ? 'Suscribirse' : 'Inicia sesion para suscribirte';
+    btn.onclick = () => Subscription.purchase();
+  }
+}
+
 async function applyLoggedInProgress(account) {
   const localUnlocked = unlockedLevels;
   setAccountSession(account);
+  Subscription.identify(account.player_id);
   try {
     const progress = await fetchProgress();
     unlockedLevels = Math.max(progress.unlocked, localUnlocked);
@@ -462,6 +749,7 @@ authForm.addEventListener('submit', async e => {
 document.getElementById('logoutBtn').addEventListener('click', () => {
   clearAccountSession();
   unlockedLevels = 1;
+  subState = { active: false, expiresAt: null };
   fetchProgress().then(progress => {
     unlockedLevels = progress.unlocked;
     buildLevelGrid();
@@ -619,6 +907,7 @@ function showScreen(el) {
   optionsMenu.hidden = true;
   profileMenu.hidden = true;
   infoMenu.hidden = true;
+  shopMenu.hidden = true;
   el.hidden = false;
   paused = true;
   Ads.gameplayStop();
@@ -630,6 +919,7 @@ function closeAllScreens() {
   optionsMenu.hidden = true;
   profileMenu.hidden = true;
   infoMenu.hidden = true;
+  shopMenu.hidden = true;
   paused = false;
   if (level) Ads.gameplayStart();
 }
@@ -652,8 +942,13 @@ function openInfoMenu() {
   showScreen(infoMenu);
 }
 
+function openShopMenu() {
+  showScreen(shopMenu);
+  renderShop();
+}
+
 document.addEventListener('click', e => {
-  const btn = e.target.closest('#playBtn, #mapMenuBtn, #optionsMenuBtn, #profileMenuBtn, #infoMenuBtn');
+  const btn = e.target.closest('#playBtn, #mapMenuBtn, #optionsMenuBtn, #profileMenuBtn, #infoMenuBtn, #shopMenuBtn');
   if (!btn) return;
   if (btn.id === 'playBtn') {
     closeAllScreens();
@@ -666,6 +961,8 @@ document.addEventListener('click', e => {
     openProfileMenu();
   } else if (btn.id === 'infoMenuBtn') {
     openInfoMenu();
+  } else if (btn.id === 'shopMenuBtn') {
+    openShopMenu();
   }
 });
 document.getElementById('mapBtn').addEventListener('click', () => { if (level) openLevelMap(); });
@@ -679,6 +976,10 @@ document.querySelectorAll('[data-close]').forEach(btn => {
 });
 
 async function initMenus() {
+  loadWallet();
+  updateCoinLabel();
+  loadFxRates();
+  if (getAccount()) Subscription.identify(PLAYER_ID);
   try {
     const meta = await fetchLevelsMeta();
     totalLevels = meta.total_levels;
@@ -750,6 +1051,7 @@ let stateTimer = 0;
 let flash = 0; // full-screen flash overlay alpha, decays each frame
 let portalCenter = null, pullStart = null, completeDuration = 1.1;
 let advancingLevel = false;
+let checkpoint = null; // shop-bought mid-level respawn point; cleared on loadLevel
 camX = 0;
 deaths = 0;
 totalDeaths = 0;
@@ -769,6 +1071,7 @@ async function loadLevel(i) {
     totalLevels = data.total_levels;
     level = data.level;
     deaths = 0;
+    checkpoint = null;
     if (i === 0) totalDeaths = 0;
     levelLabel.textContent = level.name;
     deathLabel.textContent = 'Muertes: 0';
@@ -796,8 +1099,9 @@ async function advanceAfterComplete() {
   const next = levelIndex + 1;
   const nextMeta = levelsMeta[next];
   const reachedEnd = next >= totalLevels || (nextMeta && nextMeta.locked);
+  if (next + 1 > unlockedLevels) awardCoins(COINS_PER_LEVEL);
   Ads.gameplayStop();
-  await Ads.midgameBreak();
+  if (!wallet.adsRemoved && !subState.active) await Ads.midgameBreak();
   if (reachedEnd) {
     await submitFinalScore();
     await saveProgress(Math.min(totalLevels, unlockedLevels));
@@ -841,8 +1145,9 @@ function makeStars(levelWidth) {
 }
 
 function resetEntities() {
+  const spawn = checkpoint || level.spawn;
   player = {
-    x: level.spawn.x, y: level.spawn.y,
+    x: spawn.x, y: spawn.y,
     w: 26, h: 36,
     vx: 0, vy: 0,
     onGround: false,
@@ -858,6 +1163,7 @@ function resetEntities() {
     groundType: null,
     groundPlatform: null,
     bounced: false,
+    skinColor: SKINS[wallet.equippedSkin] ? SKINS[wallet.equippedSkin].color : SKINS.default.color,
   };
   camX = player.x - W / 2;
   camTarget = camX;
@@ -906,6 +1212,43 @@ function restartLevel() {
   resetEntities();
   state = 'playing';
   Ads.gameplayStart();
+}
+
+function tryPlaceCheckpoint() {
+  if (paused || state !== 'playing' || !player || player.dead || !player.onGround || wallet.checkpointCharges <= 0) return;
+  if (checkpoint && Math.abs(checkpoint.x - player.x) < 1 && Math.abs(checkpoint.y - player.y) < 1) return;
+  wallet.checkpointCharges--;
+  checkpoint = { x: player.x, y: player.y };
+  saveWallet();
+  Sound.pop();
+}
+
+const checkpointBtn = document.getElementById('checkpointBtn');
+const checkpointBalance = document.getElementById('checkpointBalance');
+checkpointBtn.addEventListener('click', () => {
+  tryPlaceCheckpoint();
+  checkpointBtn.blur();
+});
+
+function updateCheckpointButton() {
+  checkpointBalance.textContent = wallet.checkpointCharges;
+  checkpointBtn.disabled = paused || state !== 'playing' || !player || player.dead || !player.onGround || wallet.checkpointCharges <= 0;
+  checkpointBtn.title = wallet.checkpointCharges <= 0
+    ? 'Compra banderas en la tienda'
+    : 'Colocar punto de control en el suelo (C)';
+  checkpointBtn.setAttribute('aria-label', 'Colocar punto de control: ' + wallet.checkpointCharges + ' banderas disponibles');
+}
+
+function drawCheckpoint() {
+  if (!checkpoint) return;
+  const x = Math.round(checkpoint.x + 13);
+  const y = Math.round(checkpoint.y + 36);
+  ctx.fillStyle = '#eee7ff';
+  ctx.fillRect(x - 2, y - 44, 3, 44);
+  ctx.fillRect(x - 7, y - 3, 13, 3);
+  ctx.fillStyle = '#ffd166';
+  ctx.fillRect(x + 1, y - 42, 21, 7);
+  ctx.fillRect(x + 1, y - 35, 16, 7);
 }
 
 function showIntro() {
@@ -1313,7 +1656,7 @@ function updateWallSpikes(dt) {
       w.t += dt;
       const progress = Math.min(1, Math.max(0, (w.t - w.delay) / 0.15));
       if (progress > 0 && w.extend === 0) Sound.pop();
-      w.extend = progress * (w.reach || 90);
+      w.extend = progress * (w.reach || 90) * 0.8;
     }
   }
 }
@@ -1470,6 +1813,7 @@ function checkGoal() {
 
 // ---------- Render ----------
 function render() {
+  updateCheckpointButton();
   ctx.clearRect(0, 0, W, H);
   drawBackground();
 
@@ -1491,6 +1835,7 @@ function render() {
     drawSaws();
     drawWallSpikes();
     drawGoal();
+    drawCheckpoint();
     if (!player.dead || state === 'dead') drawPlayer();
     drawParticles();
   }
@@ -2041,6 +2386,7 @@ function drawPortalCrackle(cx, cy, rx, ry) {
 }
 
 function drawPlayer() {
+  const skinColor = (SKINS[wallet.equippedSkin] || SKINS.default).color;
   const cx = player.x + player.w / 2;
   const cy = player.y + player.h / 2;
   ctx.save();
@@ -2049,7 +2395,7 @@ function drawPlayer() {
   ctx.scale(player.squashX, player.squashY);
   ctx.translate(-player.w / 2, -player.h / 2);
 
-  ctx.fillStyle = player.dead ? 'rgba(30,30,30,0.6)' : '#151515';
+  ctx.fillStyle = player.dead ? 'rgba(30,30,30,0.6)' : skinColor;
   // rounded-ish body
   const r = 6;
   ctx.beginPath();
@@ -2066,7 +2412,7 @@ function drawPlayer() {
 
   // legs — alternate while running, together while airborne
   if (!player.dead) {
-    ctx.fillStyle = '#151515';
+    ctx.fillStyle = skinColor;
     const running = player.onGround && Math.abs(player.vx) > 30;
     const phase = running ? Math.sin(player.animTime * 6) * 5 : 0;
     ctx.fillRect(4 + phase * 0.4, player.h - 2, 7, 6);
@@ -2074,7 +2420,7 @@ function drawPlayer() {
   }
 
   // eye for facing direction
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = wallet.equippedSkin === 'white' ? '#000000' : '#fff';
   const ex = player.facing === 1 ? player.w - 9 : 5;
   ctx.fillRect(ex, 9, 4, 4);
   ctx.restore();

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=10">
+<link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
   <div id="wrap">
@@ -27,9 +27,14 @@
         <div id="hud">
           <div id="levelLabel">Nivel 1</div>
           <div id="deathLabel">Muertes: 0</div>
+          <div id="coinLabel">🪙 0</div>
           <button id="mapBtn" class="menuBtn">Mapa (Esc)</button>
           <button id="optionsBtn" class="menuBtn">Opciones</button>
           <button id="restartBtn">Reiniciar (R)</button>
+          <button id="checkpointBtn" class="menuBtn" type="button" aria-label="Colocar punto de control" title="Colocar punto de control (C)">
+            <svg width="24" height="24" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"><path fill="#eee7ff" d="M3 1h2v13H3zM1 14h6v2H1z"/><path fill="#ffd166" d="M5 2h9v3h-2v3H5z"/></svg>
+            <span id="checkpointBalance">0</span>
+          </button>
         </div>
         <div id="progressTrack"><div id="progressFill"></div></div>
         <canvas id="game" width="960" height="540"></canvas>
@@ -55,6 +60,9 @@
       <button id="optionsMenuBtn" class="menuBtn">Opciones</button>
       <button id="profileMenuBtn" class="menuBtn">Perfil</button>
       <button id="infoMenuBtn" class="menuBtn">Info</button>
+      <button id="shopMenuBtn" class="shopIconBtn" aria-label="Tienda">
+        <img src="recursos/ICON_STORE.png" alt="">
+      </button>
     </div>
 
     <div id="levelMap" class="screenOverlay" hidden>
@@ -86,6 +94,26 @@
       </div>
       <button id="menuFromOptionsBtn" class="menuBtn">Menu</button>
       <button class="menuBtn backBtn" data-close="optionsMenu">Volver</button>
+    </div>
+
+    <div id="shopMenu" class="screenOverlay" hidden>
+      <h2>Tienda</h2>
+      <div class="optionRow">
+        <span>Monedas</span>
+        <span id="shopCoinBalance">🪙 0</span>
+      </div>
+      <div id="shopSkinsList"></div>
+      <div class="optionRow">
+        <span>Bandera de control (<span id="shopCheckpointCount">0</span>)</span>
+        <button id="shopCheckpointBtn" class="menuBtn">Comprar (25)</button>
+      </div>
+      <div id="shopRealMoneySection">
+        <div id="shopAdsRow" class="optionRow">
+          <span id="shopSubLabel">SUSCRIPCIÓN PREMIUM (Cero Anunciós + 150 monedas /mes)</span>
+          <button id="shopAdsOffBtn" class="menuBtn">Suscribirse</button>
+        </div>
+      </div>
+      <button class="menuBtn backBtn" data-close="shopMenu">Volver</button>
     </div>
 
     <div id="profileMenu" class="screenOverlay" hidden>
@@ -124,6 +152,7 @@
         Flechas / A-D: moverse<br>
         Espacio / Arriba: saltar<br>
         R: reiniciar nivel<br>
+        C: colocar bandera de control (si tienes cargas)<br>
         Esc: abrir mapa de niveles</p>
         <p><strong>Creditos</strong><br>Desarrollado por BFJ Studios</p>
       </div>
@@ -144,6 +173,19 @@
       window.API_BASE_URL = location.origin;
     }
   </script>
-  <script src="game.min.js?v=16"></script>
+  <script>
+    // The Android app provides window.AndroidBilling (see SubscriptionBridge.kt)
+    // and talks to Google Play Billing natively, so skip this ~750KB SDK there.
+    // Loaded via a dynamically-inserted async script (not document.write) so a
+    // slow/blocked/unreachable CDN can never hold up the rest of the page —
+    // Subscription.identify() already no-ops when window.Purchases isn't set.
+    if (!window.AndroidBilling) {
+      const rcScript = document.createElement('script');
+      rcScript.src = 'https://unpkg.com/@revenuecat/purchases-js@1.47.2/dist/Purchases.umd.js';
+      rcScript.async = true;
+      document.head.appendChild(rcScript);
+    }
+  </script>
+  <script src="game.min.js?v=22"></script>
 </body>
 </html>

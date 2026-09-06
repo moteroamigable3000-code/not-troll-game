@@ -1,5 +1,7 @@
 package com.bfjstudios.nottroll.entities;
 
+import com.badlogic.gdx.graphics.Color;
+
 public class Player {
     public float x, y;
     public float w = 26, h = 36;
@@ -17,4 +19,5 @@ public class Player {
     public String groundType;
     public PlatformInst groundPlatform;
     public boolean bounced;
+    public Color skinColor = Color.valueOf("151515ff");
 }

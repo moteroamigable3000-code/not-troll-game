@@ -218,6 +218,22 @@ canvas {
   border-radius: 6px;
 }
 
+#hud #checkpointBtn {
+  position: absolute;
+  top: calc(100% + 20px);
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 48px;
+  min-height: 40px;
+  flex-shrink: 0;
+  touch-action: manipulation;
+}
+#checkpointBtn svg { flex-shrink: 0; }
+#checkpointBtn:disabled { opacity: 0.45; cursor: default; }
+
 #hud {
   position: absolute;
   top: 8px;
@@ -237,6 +253,7 @@ canvas {
 
 #levelLabel { font-size: 1.1em; color: #ffd166; }
 #deathLabel { color: #ff6b6b; }
+#coinLabel { color: #ffd166; }
 
 #restartBtn {
   margin-left: 0;
@@ -914,6 +931,49 @@ canvas {
   font-family: 'Press Start 2P', monospace;
   font-size: 12px;
 }
+
+#shopSkinsList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 460px;
+}
+
+#shopSkinsList .optionRow { justify-content: space-between; }
+
+.skinSwatchLabel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.skinSwatch {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #000;
+  box-shadow: 0 0 0 2px #4a3a70;
+  flex-shrink: 0;
+}
+
+.shopIconBtn {
+  position: absolute;
+  right: 2%;
+  bottom: 4%;
+  /* Scale with the actual game menu, including height-limited windows. */
+  width: 18%;
+  height: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+  z-index: 2;
+}
+.shopIconBtn img { width: 100%; height: auto; display: block; }
+.shopIconBtn:hover, .shopIconBtn:focus-visible { transform: scale(1.05); }
 
 #hud .menuBtn {
   min-width: 0;

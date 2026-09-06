@@ -47,7 +47,7 @@ public class GameScreen extends ScreenAdapter {
     private final ShapeRenderer shapes;
 
     private final Stage hud;
-    private Label levelLabel, deathLabel, overlayTitle, overlaySub;
+    private Label levelLabel, deathLabel, coinLabel, overlayTitle, overlaySub;
     private Image progressTrack, progressFill;
     private TouchButtonActor touchLeft, touchRight, touchJump;
 
@@ -75,6 +75,8 @@ public class GameScreen extends ScreenAdapter {
     private float completeDuration = 1.1f;
     private boolean advancingLevel;
     private int deaths;
+    private boolean hasCheckpoint;
+    private float checkpointX, checkpointY;
     private float sawSpin;
     private float bgAnimT;
 
@@ -121,8 +123,16 @@ public class GameScreen extends ScreenAdapter {
         deathLabel.setPosition(14, Constants.H - 50);
         hud.addActor(deathLabel);
 
+        coinLabel = new Label("", game.uiSkin.skin, "hud");
+        coinLabel.setColor(UiSkin.GOLD);
+        coinLabel.setPosition(14, Constants.H - 72);
+        hud.addActor(coinLabel);
+
         TextButton mapBtn = smallButton("Mapa (Esc)", () -> {
             game.setScreen(new LevelMapScreen(game, GameScreen.this));
+        });
+        TextButton shopBtn = smallButton("Tienda", () -> {
+            game.setScreen(new ShopScreen(game, GameScreen.this));
         });
         TextButton optionsBtn = smallButton("Opciones", () -> {
             game.setScreen(new OptionsScreen(game, GameScreen.this));
@@ -132,12 +142,13 @@ public class GameScreen extends ScreenAdapter {
         float gap = 10f;
         float y = Constants.H - 42;
         float x = Constants.W - 16;
-        for (TextButton b : new TextButton[]{restartBtn, optionsBtn, mapBtn}) {
+        for (TextButton b : new TextButton[]{restartBtn, optionsBtn, shopBtn, mapBtn}) {
             x -= b.getWidth();
             b.setPosition(x, y);
             x -= gap;
         }
         hud.addActor(mapBtn);
+        hud.addActor(shopBtn);
         hud.addActor(optionsBtn);
         hud.addActor(restartBtn);
 
@@ -225,10 +236,12 @@ public class GameScreen extends ScreenAdapter {
         this.levelIndex = index;
         levelDef = game.assets.levels.get(index);
         deaths = 0;
+        hasCheckpoint = false;
         if (index == 0) game.totalDeaths = 0;
 
         levelLabel.setText(levelDef.name);
         deathLabel.setText("Muertes: 0");
+        coinLabel.setText("Monedas: " + game.progress.getCoins());
         progressFill.setWidth(0);
 
         stars.clear();
@@ -260,8 +273,9 @@ public class GameScreen extends ScreenAdapter {
 
     private void resetEntities() {
         player = new Player();
-        player.x = levelDef.spawnX;
-        player.y = levelDef.spawnY;
+        player.x = hasCheckpoint ? checkpointX : levelDef.spawnX;
+        player.y = hasCheckpoint ? checkpointY : levelDef.spawnY;
+        player.skinColor = com.bfjstudios.nottroll.Shop.skinColor(game.progress.getEquippedSkin());
 
         camX = player.x - Constants.W / 2f;
         camTarget = camX;
@@ -301,6 +315,15 @@ public class GameScreen extends ScreenAdapter {
         overlaySub.getColor().a = 0f;
     }
 
+    private void placeCheckpoint() {
+        if (!"playing".equals(state) || player == null || !player.onGround) return;
+        if (!game.progress.useCheckpointCharge()) return;
+        hasCheckpoint = true;
+        checkpointX = player.x;
+        checkpointY = player.y;
+        game.sfx.click();
+    }
+
     private void showIntro() {
         state = "intro";
         stateTimer = 1.3f;
@@ -315,6 +338,7 @@ public class GameScreen extends ScreenAdapter {
     @Override
     public void show() {
         Gdx.input.setInputProcessor(hud);
+        coinLabel.setText("Monedas: " + game.progress.getCoins());
     }
 
     @Override
@@ -342,6 +366,9 @@ public class GameScreen extends ScreenAdapter {
         }
         if (Gdx.input.isKeyJustPressed(Input.Keys.R)) {
             restartLevel();
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.C)) {
+            placeCheckpoint();
         }
     }
 
@@ -838,6 +865,9 @@ public class GameScreen extends ScreenAdapter {
         advancingLevel = true;
         int next = levelIndex + 1;
         boolean reachedEnd = next >= game.assets.levels.size || game.assets.levels.get(next).locked;
+        if (next + 1 > game.progress.getUnlockedLevels()) {
+            game.progress.addCoins(com.bfjstudios.nottroll.Shop.COINS_PER_LEVEL);
+        }
         if (reachedEnd) {
             game.progress.setUnlockedLevels(game.assets.levels.size);
             loadLevel(0);
@@ -1171,7 +1201,7 @@ public class GameScreen extends ScreenAdapter {
         float hw = (player.w / 2f) * player.squashX;
         float hh = (player.h / 2f) * player.squashY;
 
-        Color bodyColor = player.dead ? new Color(0.12f, 0.12f, 0.12f, 0.6f) : new Color(0.08f, 0.08f, 0.08f, 1f);
+        Color bodyColor = player.dead ? new Color(0.12f, 0.12f, 0.12f, 0.6f) : player.skinColor;
         shapes.setColor(bodyColor);
         shapes.rect(cx - hw, cy - hh, hw * 2, hh * 2);
 

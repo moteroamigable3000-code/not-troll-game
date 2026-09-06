@@ -5,12 +5,15 @@ import com.badlogic.gdx.Input;
 import com.badlogic.gdx.ScreenAdapter;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
 import com.badlogic.gdx.scenes.scene2d.Stage;
+import com.badlogic.gdx.scenes.scene2d.ui.Image;
 import com.badlogic.gdx.scenes.scene2d.ui.Label;
 import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
+import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.bfjstudios.nottroll.Constants;
 import com.bfjstudios.nottroll.NotTrollGame;
@@ -47,6 +50,20 @@ public class MainMenuScreen extends ScreenAdapter {
 
         root.add(button("Info", () ->
             game.setScreen(new InfoScreen(game, MainMenuScreen.this)))).width(270).height(44).row();
+
+        // Free-floating shop icon (not part of the vertical button stack), bottom-right — mirrors the web build's mockup.
+        Image shopIcon = new Image(new TextureRegionDrawable(new TextureRegion(game.assets.iconStore)));
+        float shopSize = 220f;
+        shopIcon.setSize(shopSize, shopSize);
+        shopIcon.setPosition(Constants.W - shopSize - 18f, 18f);
+        shopIcon.addListener(new ClickListener() {
+            @Override
+            public void clicked(InputEvent event, float x, float y) {
+                game.sfx.click();
+                game.setScreen(new ShopScreen(game, MainMenuScreen.this));
+            }
+        });
+        stage.addActor(shopIcon);
     }
 
     private TextButton button(String text, Runnable onClick) {

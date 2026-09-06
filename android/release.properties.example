@@ -1,0 +1,8 @@
+# Copiar como release.properties (ignorado por Git).
+# Clave PUBLICA del SDK Android de RevenueCat, nunca una clave secreta.
+revenueCatAndroidApiKey=goog_REEMPLAZAR
+# Ruta relativa a android/ o absoluta con barras /.
+storeFile=upload-key.jks
+storePassword=
+keyAlias=upload
+keyPassword=

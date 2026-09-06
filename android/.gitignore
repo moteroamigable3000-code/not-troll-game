@@ -1,8 +1,13 @@
 .gradle/
+.gradle-user-home/
 build/
 */build/
 local.properties
 .idea/
 *.iml
 .DS_Store
+release.properties
+*.jks
+*.keystore
+app/release/
 gradle/wrapper/dists/

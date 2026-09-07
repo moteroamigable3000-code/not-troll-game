@@ -14,7 +14,12 @@ import com.bfjstudios.nottroll.entities.WallSpikeInst;
 public class LevelDef {
     public String name;
     public String hint;
+    public boolean chasingGhost;
+    public float ghostSpeed, ghostCatchupSpeed, ghostDelay, ghostStartDistance;
     public float width;
+    public float height;
+    public boolean verticalCamera;
+    public float[] routeFloors;
     public float spawnX, spawnY;
     public float goalX, goalY, goalW, goalH;
     public boolean locked;

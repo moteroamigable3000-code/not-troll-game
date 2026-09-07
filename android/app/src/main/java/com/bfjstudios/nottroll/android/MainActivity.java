@@ -38,6 +38,8 @@ public class MainActivity extends Activity {
         subscriptionBridge = new SubscriptionBridge(this, webView);
         webView.addJavascriptInterface(subscriptionBridge, "AndroidBilling");
         webView.loadUrl("file:///android_asset/index.html");
+
+        NotificationScheduler.INSTANCE.schedule(this);
     }
 
     @Override

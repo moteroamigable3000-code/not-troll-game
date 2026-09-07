@@ -1,6 +1,7 @@
 package com.bfjstudios.nottroll.entities;
 
 public class PlatformInst {
+    public boolean shelter;
     public float x, y, w, h;
     public String type = "solid";
 
@@ -25,6 +26,7 @@ public class PlatformInst {
 
     public PlatformInst copyForReset() {
         PlatformInst p = new PlatformInst();
+        p.shelter = shelter;
         p.x = x; p.y = y; p.w = w; p.h = h; p.type = type;
         p.triggerX = triggerX; p.delay = delay; p.power = power;
         p.axis = axis; p.minX = minX; p.maxX = maxX; p.minY = minY; p.maxY = maxY; p.speed = speed;

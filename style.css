@@ -460,6 +460,29 @@ canvas {
 
 .screenOverlay[hidden] { display: none; }
 
+.videoScreen {
+  padding: 0;
+  gap: 0;
+  background: #000;
+}
+
+.videoScreen video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+  z-index: 0;
+}
+
+#finalVideoSkipBtn {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  z-index: 2;
+}
+
 /* Faint scanline texture — only over the menu chrome, never over the
    actual gameplay canvas. */
 .screenOverlay::after {
@@ -587,6 +610,9 @@ canvas {
   gap: 8px;
   margin-bottom: 18px;
 }
+#authTabs[hidden] {
+  display: none;
+}
 .authTab {
   min-width: 0;
   padding: 8px 14px;
@@ -604,6 +630,9 @@ canvas {
   flex-direction: column;
   gap: 14px;
   width: min(320px, 80vw);
+}
+#authForm[hidden] {
+  display: none;
 }
 
 .formRow {
@@ -632,6 +661,36 @@ canvas {
   box-shadow: inset 0 0 0 2px #ffd166;
 }
 
+.passwordField {
+  position: relative;
+}
+.passwordField input {
+  width: 100%;
+  padding-right: 42px;
+}
+.passwordToggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 6px 8px;
+  font-size: 17px;
+  line-height: 1;
+  color: #8f7fc4;
+  cursor: pointer;
+}
+.passwordToggle:hover,
+.passwordToggle:focus-visible {
+  color: #ffd166;
+}
+.passwordToggle.showing {
+  color: #ffd166;
+}
+
 #authForm .menuBtn {
   align-self: center;
   margin-top: 4px;
@@ -642,6 +701,46 @@ canvas {
   font-size: 18px;
   color: #ff6b6b;
   text-align: left;
+}
+
+.authSuccess {
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  color: #7ee787;
+  text-align: left;
+}
+
+.linkBtn {
+  align-self: center;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 4px;
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  color: #8f7fc4;
+  text-decoration: underline;
+  cursor: pointer;
+  min-width: 0;
+}
+.linkBtn:hover,
+.linkBtn:focus-visible {
+  color: #ffd166;
+}
+
+#forgotForm,
+#codeForm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(320px, 80vw);
+}
+#forgotForm[hidden],
+#codeForm[hidden] {
+  display: none;
+}
+#codeSentNotice:empty {
+  display: none;
 }
 
 #profileLoggedIn {
@@ -934,31 +1033,248 @@ canvas {
   font-size: 12px;
 }
 
-#shopSkinsList {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  max-width: 460px;
+/* ---------- Shop: tabbed screen over its own scenic background ---------- */
+.shopScreen {
+  background-image:
+    linear-gradient(rgba(10,8,20,0.3), rgba(14,10,26,0.45)),
+    url('recursos/FONDO_TIENDA.PNG.png');
+  background-size: cover;
+  background-position: center;
+  justify-content: flex-start;
+  padding-top: 28px;
 }
 
-#shopSkinsList .optionRow { justify-content: space-between; }
-
-.skinSwatchLabel {
+.shopHeader {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  width: 100%;
+  max-width: 620px;
+  position: relative;
+}
+.shopHeader h2 {
+  margin: 0;
+  font-size: clamp(20px, 6vw, 34px);
+}
+
+.shopCoinBadge {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 13px;
+  color: #ffd166;
+  background: #17132a;
+  border: 2px solid #000;
+  box-shadow: inset 0 0 0 2px #4a3a70;
+  padding: 6px 12px;
   white-space: nowrap;
 }
 
-.skinSwatch {
-  display: inline-block;
-  width: 20px;
-  height: 20px;
-  border: 2px solid #000;
-  box-shadow: 0 0 0 2px #4a3a70;
-  flex-shrink: 0;
+.shopTabs {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 6px;
 }
+.shopTabs .authTab { min-width: 96px; }
+
+.shopPanel {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+.shopPanel[hidden] { display: none; }
+
+.shopCardGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 200px));
+  gap: 14px;
+  width: 100%;
+  max-width: 460px;
+  justify-content: center;
+}
+
+.shopCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  background: rgba(23, 19, 42, 0.85);
+  border: 2px solid #000;
+  box-shadow: inset 0 0 0 2px #4a3a70, 4px 4px 0 rgba(0,0,0,0.5);
+  padding: 14px 10px;
+}
+
+/* Twinkling sparkles flanking the character, like the stars already
+   scattered across the shop background. */
+.shopCard::before,
+.shopCard::after {
+  content: "";
+  position: absolute;
+  top: 20px;
+  width: 10px;
+  height: 10px;
+  background: #e8dcff;
+  clip-path: polygon(50% 0%, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0% 50%, 38% 38%);
+  filter: drop-shadow(0 0 4px rgba(232,220,255,0.9));
+  animation: sparkleTwinkle 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+.shopCard::before { left: 16px; }
+.shopCard::after { right: 16px; top: 34px; width: 7px; height: 7px; animation-delay: 0.6s; }
+@keyframes sparkleTwinkle {
+  0%, 100% { opacity: 0.35; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+.shopCard .menuBtn { min-width: 0; width: 100%; padding: 10px 8px; font-size: 11px; }
+.shopCardName {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  text-align: center;
+}
+
+.shopCardWide {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  max-width: 460px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+}
+.shopCardWide .menuBtn { width: auto; }
+.shopCardWideLabel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.shopCardWideLabel .flagIcon {
+  width: 22px;
+  height: 40px;
+  margin-bottom: 0;
+}
+.shopCardWideLabel .flagPole { height: 36px; }
+
+/* Same silhouette drawPlayer() draws on canvas (rounded body, two little
+   feet, one eye facing right) — not hand-illustrated art, just the actual
+   in-game character shape scaled up for the shop card. Swap in an <img>
+   per skin instead if hand-drawn sprite art shows up later. */
+.playerGlow {
+  position: absolute;
+  top: 50px;
+  left: 50%;
+  width: 110px;
+  height: 110px;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(168,132,255,0.55) 0%, rgba(168,132,255,0.2) 45%, transparent 72%);
+  pointer-events: none;
+}
+
+.playerShape {
+  position: relative;
+  width: 52px;
+  height: 72px;
+  background: var(--player-color, #f2eefc);
+  border-radius: 16px 16px 12px 12px;
+  filter: drop-shadow(3px 3px 0 rgba(0,0,0,0.5));
+  flex-shrink: 0;
+  margin-bottom: 6px;
+}
+.playerFoot {
+  position: absolute;
+  bottom: -8px;
+  width: 13px;
+  height: 12px;
+  background: var(--player-color, #f2eefc);
+}
+.playerFoot:nth-child(1) { left: 5px; }
+.playerFoot:nth-child(2) { right: 5px; }
+.playerEye {
+  position: absolute;
+  top: 18px;
+  right: 9px;
+  width: 8px;
+  height: 8px;
+  background: var(--eye-color, #fff);
+}
+
+/* Same checkpoint flag drawCheckpoint() plants in the level — pole, base
+   and a two-tier pennant in the same gold used across the UI. */
+.flagIcon {
+  position: relative;
+  width: 40px;
+  height: 72px;
+  flex-shrink: 0;
+  filter: drop-shadow(2px 2px 0 rgba(0,0,0,0.5));
+  margin-bottom: 6px;
+}
+.flagPole {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 64px;
+  background: #eee7ff;
+}
+.flagBase {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 22px;
+  height: 5px;
+  background: #eee7ff;
+}
+.flagCloth {
+  position: absolute;
+  left: 50%;
+  background: #ffd166;
+}
+.flagCloth:nth-child(2) { top: 4px; width: 30px; height: 11px; }
+.flagCloth:nth-child(3) { top: 15px; width: 24px; height: 11px; }
+
+.shopPremiumBanner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 560px;
+  background: linear-gradient(rgba(58,46,10,0.7), rgba(23,19,42,0.85));
+  border: 2px solid #000;
+  box-shadow: inset 0 0 0 2px #ffd166, 4px 4px 0 rgba(0,0,0,0.5);
+  padding: 16px;
+}
+.shopPremiumIcon { font-size: 34px; flex-shrink: 0; }
+.shopPremiumInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.shopPremiumTitle {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+  color: #ffd166;
+}
+.shopPremiumBenefits {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 18px;
+}
+.shopPremiumBenefits li::before { content: "✦ "; color: #ffd166; }
+.shopPremiumBtn {
+  background: #ffd166 !important;
+  color: #241d3d !important;
+  flex-shrink: 0;
+  min-width: 110px !important;
+}
+.shopPremiumBtn:hover:not(:disabled) { background: #ffdd85 !important; }
 
 .shopIconBtn {
   position: absolute;

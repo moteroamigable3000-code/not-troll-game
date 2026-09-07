@@ -42,11 +42,12 @@ class SubscriptionBridge(private val activity: Activity, private val webView: We
         }
     }
 
-    // Subscriptions get pending-purchase support automatically — no
-    // PendingPurchasesParams opt-in needed unless we sell one-time products.
+    // Subscriptions get pending-purchase support automatically, but Billing
+    // Library 8+ still requires enableOneTimeProducts() to be called or
+    // build() throws — even though this app doesn't sell one-time products.
     private val billingClient: BillingClient = BillingClient.newBuilder(activity)
         .setListener(purchasesUpdatedListener)
-        .enablePendingPurchases(PendingPurchasesParams.newBuilder().build())
+        .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
         .enableAutoServiceReconnection()
         .build()
 

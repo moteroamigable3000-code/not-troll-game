@@ -26,7 +26,18 @@ public final class LevelLoader {
             LevelDef def = new LevelDef();
             def.name = lv.getString("name", "Nivel " + (i + 1));
             def.hint = lv.getString("hint", "");
+            JsonValue ghost = lv.get("chasingGhost");
+            if (ghost != null) {
+                def.chasingGhost = true;
+                def.ghostSpeed = ghost.getFloat("speed");
+                def.ghostCatchupSpeed = ghost.getFloat("catchupSpeed");
+                def.ghostDelay = ghost.getFloat("delay");
+                def.ghostStartDistance = ghost.getFloat("startDistance");
+            }
             def.width = lv.getFloat("width");
+            def.height = lv.getFloat("height", 0);
+            def.verticalCamera = lv.getBoolean("verticalCamera", false);
+            if (lv.has("routeFloors")) def.routeFloors = lv.get("routeFloors").asFloatArray();
             JsonValue spawn = lv.get("spawn");
             def.spawnX = spawn.getFloat("x");
             def.spawnY = spawn.getFloat("y");
@@ -40,6 +51,7 @@ public final class LevelLoader {
             if (platforms != null) {
                 for (JsonValue p = platforms.child; p != null; p = p.next) {
                     PlatformInst pl = new PlatformInst();
+                    pl.shelter = p.getBoolean("shelter", false);
                     pl.x = p.getFloat("x"); pl.y = p.getFloat("y");
                     pl.w = p.getFloat("w"); pl.h = p.getFloat("h");
                     pl.type = p.getString("type", "solid");
@@ -96,8 +108,12 @@ public final class LevelLoader {
             if (fallingBlocks != null) {
                 for (JsonValue b = fallingBlocks.child; b != null; b = b.next) {
                     FallingBlockInst fb = new FallingBlockInst();
+                    fb.ceilingSpikes = b.getBoolean("ceilingSpikes", false);
                     fb.x = b.getFloat("x"); fb.y = b.getFloat("y"); fb.w = b.getFloat("w"); fb.h = b.getFloat("h");
                     fb.triggerX = b.getFloat("triggerX");
+                    fb.triggerY = b.getFloat("triggerY", Float.NaN);
+                    fb.triggerH = b.getFloat("triggerH", 0);
+                    fb.triggerDir = b.getInt("triggerDir", 1);
                     fb.delay = b.getFloat("delay", 0);
                     fb.groundY = b.getFloat("groundY");
                     def.fallingBlocks.add(fb);
@@ -108,10 +124,15 @@ public final class LevelLoader {
             if (bombs != null) {
                 for (JsonValue b = bombs.child; b != null; b = b.next) {
                     BombInst bm = new BombInst();
+                    bm.missile = b.getBoolean("missile", false);
+                    bm.homing = b.getBoolean("homing", false);
                     bm.kind = b.getString("kind", "sky");
                     bm.x = b.getFloat("x", 0);
                     bm.y = b.getFloat("y");
                     bm.triggerX = b.getFloat("triggerX");
+                    bm.triggerY = b.getFloat("triggerY", Float.NaN);
+                    bm.triggerH = b.getFloat("triggerH", 0);
+                    bm.triggerDir = b.getInt("triggerDir", 1);
                     bm.delay = b.getFloat("delay", 0);
                     bm.groundY = b.getFloat("groundY", 0);
                     bm.radius = b.getFloat("radius", 20);

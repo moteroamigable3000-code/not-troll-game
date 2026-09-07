@@ -62,6 +62,7 @@ public class GameScreen extends ScreenAdapter {
     private final Array<BombInst> bombs = new Array<>();
     private final Array<TeleporterInst> teleporters = new Array<>();
     private RunWallInst runWall;
+    private float ghostX, ghostY, ghostTime;
     private final Array<Particle> particles = new Array<>();
     private final Array<float[]> stars = new Array<>(); // x, y, r, twinkle
     private final Array<float[]> portalMotes = new Array<>(); // angle, radius, speed, bob, size, colorIdx
@@ -69,7 +70,7 @@ public class GameScreen extends ScreenAdapter {
     private String state = "intro"; // intro | playing | dead | complete
     private float stateTimer;
     private float flash;
-    private float camX, camTarget;
+    private float camX, camTarget, camY;
     private float shakeT, shakeMag;
     private float portalCx, portalCy, pullStartX, pullStartY;
     private float completeDuration = 1.1f;
@@ -279,7 +280,8 @@ public class GameScreen extends ScreenAdapter {
         player.y = hasCheckpoint ? checkpointY : levelDef.spawnY;
         player.skinColor = com.bfjstudios.nottroll.Shop.skinColor(game.progress.getEquippedSkin());
 
-        camX = player.x - Constants.W / 2f;
+        camX = Math.max(0, Math.min(player.x - Constants.W / 2f, levelDef.width - Constants.W));
+        camY = cameraTargetY();
         camTarget = camX;
         particles.clear();
         shakeT = 0; shakeMag = 0;
@@ -303,6 +305,7 @@ public class GameScreen extends ScreenAdapter {
         teleporters.clear();
         for (TeleporterInst t : levelDef.teleporters) teleporters.add(t.copyForReset());
 
+        ghostX = Math.max(24, player.x - levelDef.ghostStartDistance); ghostY = player.y; ghostTime = 0;
         runWall = levelDef.runWall != null ? levelDef.runWall.copyForReset() : null;
     }
 
@@ -430,15 +433,38 @@ public class GameScreen extends ScreenAdapter {
         updateBombs(dt);
         updateTeleporters(dt);
         updateRunWall(dt);
+        updateChasingGhost(dt);
         updateParticles(dt);
         checkHazards();
         checkGoal();
 
         camTarget = Math.max(0, Math.min(player.x - Constants.W / 2f + player.facing * 40, levelDef.width - Constants.W));
         camX += (camTarget - camX) * Math.min(1, Constants.CAM_SMOOTH * dt);
+        camY += (cameraTargetY() - camY) * Math.min(1, Constants.CAM_SMOOTH * dt);
 
-        float pct = MathUtils.clamp((player.x / levelDef.width) * 100f, 0, 100);
+        float pct = MathUtils.clamp(levelProgress() * 100f, 0, 100);
         progressFill.setWidth(Constants.W * pct / 100f);
+    }
+
+    private float cameraTargetY() {
+        if (!levelDef.verticalCamera) return 0;
+        return Math.max(0, Math.min(player.y + player.h / 2f - Constants.H * 0.45f, levelDef.height - Constants.H));
+    }
+
+    private float levelProgress() {
+        if (levelDef.routeFloors == null) return player.x / levelDef.width;
+        float[] floors = levelDef.routeFloors;
+        int floor = 0;
+        for (int i = 1; i < floors.length; i++) {
+            if (Math.abs(player.y + player.h - floors[i]) < Math.abs(player.y + player.h - floors[floor])) floor = i;
+        }
+        float across = MathUtils.clamp((player.x - 200) / (levelDef.width - 400), 0, 1);
+        return (floor + (floor % 2 == 1 ? 1 - across : across)) / floors.length;
+    }
+
+    private boolean trapReached(float x, float y, float h, int dir) {
+        if (!Float.isNaN(y) && (player.y + player.h < y || player.y > y + h)) return false;
+        return dir == -1 ? player.x < x : player.x + player.w > x;
     }
 
     private void updatePlayer(float dt) {
@@ -517,7 +543,7 @@ public class GameScreen extends ScreenAdapter {
             if (MathUtils.random() < 0.35f) spawnDust(player.x + player.w / 2f, player.y + player.h, 1);
         }
 
-        player.falling = !player.onGround && player.y > Constants.H - 40 - Constants.GROUND_LIFT;
+        player.falling = !player.onGround && player.y > (levelDef.height > 0 ? levelDef.height : Constants.H) - 40 - Constants.GROUND_LIFT;
         if (player.falling) player.rotation += dt * 9f * (player.facing != 0 ? player.facing : 1);
         else player.rotation *= Math.max(0, 1 - dt * 10);
     }
@@ -667,7 +693,7 @@ public class GameScreen extends ScreenAdapter {
         for (FallingBlockInst b : fallingBlocks) {
             if (b.gone) continue;
             if ("idle".equals(b.state)) {
-                if (player.x + player.w > b.triggerX) { b.state = "warn"; b.t = 0; }
+                if (trapReached(b.triggerX, b.triggerY, b.triggerH, b.triggerDir)) { b.state = "warn"; b.t = 0; }
             } else if ("warn".equals(b.state)) {
                 b.t += dt;
                 if (b.t >= b.delay) { b.state = "falling"; b.vy = 60; }
@@ -684,6 +710,7 @@ public class GameScreen extends ScreenAdapter {
                     spawnBurst(b.x + b.w / 2f, b.groundY, 14, COL_CRUMBLE, 6, 0.5f, 220, 900, 0, "debris");
                 }
             } else if ("landed".equals(b.state)) {
+                if (b.ceilingSpikes && !player.dead && overlapPlayer(b.x, b.curY, b.w, b.h)) killPlayer();
                 b.t += dt;
                 if (b.t > 0.6f) b.gone = true;
             }
@@ -694,11 +721,12 @@ public class GameScreen extends ScreenAdapter {
         for (BombInst b : bombs) {
             if (b.gone) continue;
             if ("idle".equals(b.state)) {
-                if (player.x + player.w > b.triggerX) { b.state = "warn"; b.t = 0; }
+                if (trapReached(b.triggerX, b.triggerY, b.triggerH, b.triggerDir)) { b.state = "warn"; b.t = 0; }
             } else if ("warn".equals(b.state)) {
                 b.t += dt;
                 if (b.t >= b.delay) {
                     b.state = "active";
+                    if (b.homing) { b.chasePlatform = player.groundPlatform; b.leftPlatform = !player.onGround; }
                     if ("sky".equals(b.kind)) { b.curY = b.y; b.vy = 40; }
                 }
             } else if ("active".equals(b.state)) {
@@ -707,7 +735,7 @@ public class GameScreen extends ScreenAdapter {
                     b.curY += b.vy * dt;
                     float dx = (player.x + player.w / 2f) - b.x;
                     float dy = (player.y + player.h / 2f) - b.curY;
-                    if (!player.dead && Math.hypot(dx, dy) < b.radius) killPlayer();
+                    if (!player.dead && (b.missile ? overlapPlayer(b.x - 8, b.curY - 18, 16, 36) : Math.hypot(dx, dy) < b.radius)) killPlayer();
                     if (b.curY >= b.groundY) {
                         float bdx = (player.x + player.w / 2f) - b.x;
                         float bdy = (player.y + player.h / 2f) - b.groundY;
@@ -718,11 +746,24 @@ public class GameScreen extends ScreenAdapter {
                         spawnBurst(b.x, b.groundY, 20, new Color(1f, 0.7f, 0.28f, 1f), 6, 0.5f, 340, 600, 0, "spark");
                         b.gone = true;
                     }
+                } else if (b.homing) {
+                    if (!player.onGround) b.leftPlatform = true;
+                    if (b.chasePlatform == null && player.onGround) { b.chasePlatform = player.groundPlatform; b.leftPlatform = false; }
+                    if (b.leftPlatform && player.onGround && player.groundPlatform != null && player.groundPlatform != b.chasePlatform) {
+                        b.gone = true;
+                        spawnBurst(b.curX, b.curY, 10, Color.CYAN, 3, 0.35f, 100, 0, 0, "spark");
+                        continue;
+                    }
+                    float dx = player.x + player.w / 2 - b.curX, dy = player.y + player.h / 2 - b.curY;
+                    float distance = (float) Math.hypot(dx, dy), step = Math.min(distance, b.speed * dt);
+                    b.homingAngle = (float) Math.atan2(dy, dx);
+                    if (distance > 0) { b.curX += dx / distance * step; b.curY += dy / distance * step; }
+                    if (!player.dead && overlapPlayer(b.curX - 16, b.curY - 8, 32, 16)) killPlayer();
                 } else {
                     b.curX += b.speed * b.dir * dt;
                     float dx = (player.x + player.w / 2f) - b.curX;
                     float dy = (player.y + player.h / 2f) - b.y;
-                    if (!player.dead && Math.hypot(dx, dy) < b.radius) {
+                    if (!player.dead && (b.missile ? overlapPlayer(b.curX - 18, b.y - 8, 36, 16) : Math.hypot(dx, dy) < b.radius)) {
                         killPlayer();
                         addShake(7, 0.3f);
                         flash = Math.max(flash, 0.35f);
@@ -744,6 +785,7 @@ public class GameScreen extends ScreenAdapter {
                 spawnBurst(player.x + player.w / 2f, player.y + player.h / 2f, 14, new Color(0.56f, 0.91f, 1f, 1f), 5, 0.4f, 260, 0, 0, "spark");
                 player.x = tp.toX;
                 player.y = tp.toY;
+            if (levelDef.verticalCamera) camY = cameraTargetY();
                 player.vx = 0; player.vy = 0;
                 spawnBurst(player.x + player.w / 2f, player.y + player.h / 2f, 14, new Color(0.79f, 0.64f, 1f, 1f), 5, 0.4f, 260, 0, 0, "spark");
                 player.teleportCooldown = 0.35f;
@@ -752,6 +794,18 @@ public class GameScreen extends ScreenAdapter {
                 break;
             }
         }
+    }
+
+    private void updateChasingGhost(float dt) {
+        if (!levelDef.chasingGhost || player.dead) return;
+        ghostTime += dt;
+        if (ghostTime < levelDef.ghostDelay) return;
+        float dx = player.x - ghostX, dy = player.y - ghostY;
+        float distance = (float) Math.hypot(dx, dy);
+        float speed = distance > 220 ? levelDef.ghostCatchupSpeed : levelDef.ghostSpeed;
+        float step = Math.min(distance, speed * dt);
+        if (distance > 0) { ghostX += dx / distance * step; ghostY += dy / distance * step; }
+        if (overlapPlayer(ghostX + 3, ghostY + 3, 20, 30)) killPlayer();
     }
 
     private void updateRunWall(float dt) {
@@ -791,7 +845,7 @@ public class GameScreen extends ScreenAdapter {
             float rx = w.dir == 1 ? w.x : w.x - w.extend;
             if (w.extend > 10 && overlapPlayer(rx, w.y, w.extend, w.h)) { killPlayer(); return; }
         }
-        if (player.y > Constants.H + 200) killPlayer();
+        if (player.y > (levelDef.height > 0 ? levelDef.height : Constants.H) + 200) killPlayer();
     }
 
     private void checkGoal() {
@@ -897,12 +951,12 @@ public class GameScreen extends ScreenAdapter {
             shakeY = (MathUtils.random() - 0.5f) * shakeMag;
         }
 
-        worldCamera.position.set(camX + Constants.W / 2f + shakeX, Constants.H / 2f + shakeY, 0);
+        worldCamera.position.set(camX + Constants.W / 2f + shakeX, camY + Constants.H / 2f + shakeY, 0);
         worldCamera.update();
 
         game.batch.setProjectionMatrix(worldCamera.combined);
         game.batch.begin();
-        game.batch.draw(game.assets.backgroundGame, camX, Constants.H, Constants.W, -Constants.H);
+        game.batch.draw(game.assets.backgroundGame, camX, camY + Constants.H, Constants.W, -Constants.H);
         drawStars();
         game.batch.end();
 
@@ -911,6 +965,9 @@ public class GameScreen extends ScreenAdapter {
 
         shapes.begin(ShapeRenderer.ShapeType.Filled);
         drawPlatforms();
+        for (PlatformInst shelter : platforms) {
+            if (shelter.shelter) { shapes.setColor(0.38f, 0.92f, 1f, 1f); shapes.rect(shelter.x, shelter.y, shelter.w, 5); }
+        }
         drawStaticHazards();
         drawRunWall();
         drawTeleporters();
@@ -919,6 +976,7 @@ public class GameScreen extends ScreenAdapter {
         drawSaws();
         drawWallSpikes();
         drawGoal();
+        drawChasingGhost();
         if (!player.dead || "dead".equals(state)) drawPlayer();
         drawParticles();
         shapes.end();
@@ -926,7 +984,7 @@ public class GameScreen extends ScreenAdapter {
         if (flash > 0) {
             shapes.begin(ShapeRenderer.ShapeType.Filled);
             shapes.setColor(1f, 0.24f, 0.24f, flash);
-            shapes.rect(camX, 0, Constants.W, Constants.H);
+            shapes.rect(camX, camY, Constants.W, Constants.H);
             shapes.end();
         }
         Gdx.gl.glDisable(GL20.GL_BLEND);
@@ -1068,16 +1126,39 @@ public class GameScreen extends ScreenAdapter {
         }
     }
 
+    private void drawMissile(BombInst b) {
+        float x = "sky".equals(b.kind) ? b.x : b.curX;
+        float y = "sky".equals(b.kind) || b.homing ? b.curY : b.y;
+        float angle = "sky".equals(b.kind) ? MathUtils.PI / 2 : b.homing ? b.homingAngle : b.dir == 1 ? 0 : MathUtils.PI;
+        float dx = MathUtils.cos(angle), dy = MathUtils.sin(angle);
+        float flame = 12 + 5 * MathUtils.sin(bgAnimT * 20);
+        shapes.setColor(1f, 0.6f, 0.2f, 1f);
+        shapes.triangle(x-dx*18-dy*6, y-dy*18+dx*6, x-dx*(18+flame), y-dy*(18+flame), x-dx*18+dy*6, y-dy*18-dx*6);
+        shapes.setColor(0.79f, 0.85f, 0.92f, 1f);
+        shapes.rectLine(x-dx*18, y-dy*18, x+dx*8, y+dy*8, 16);
+        shapes.setColor(1f, 0.22f, 0.29f, 1f);
+        shapes.triangle(x+dx*8-dy*8, y+dy*8+dx*8, x+dx*20, y+dy*20, x+dx*8+dy*8, y+dy*8-dx*8);
+    }
+
     private void drawFallingBlocks() {
         for (FallingBlockInst b : fallingBlocks) {
             if (b.gone) continue;
+            if (b.ceilingSpikes) {
+                float y = "falling".equals(b.state) || "landed".equals(b.state) ? b.curY : b.y;
+                shapes.setColor("warn".equals(b.state) ? COL_SPIKE : Color.LIGHT_GRAY);
+                shapes.rect(b.x, y, b.w, 8);
+                for (int i = 0; i < 3; i++) {
+                    float x = b.x + i * b.w / 3;
+                    shapes.triangle(x, y + 8, x + b.w / 6, y + b.h, x + b.w / 3, y + 8);
+                }
+            }
             if ("warn".equals(b.state)) {
                 float pulse = 0.4f + MathUtils.sin(bgAnimT * 11f) * 0.3f;
                 shapes.setColor(1f, 0.3f, 0.3f, 0.25f + pulse * 0.25f);
                 shapes.ellipse(b.x, b.groundY - 12, b.w, 20);
                 continue;
             }
-            if ("falling".equals(b.state) || "landed".equals(b.state)) {
+            if (!b.ceilingSpikes && ("falling".equals(b.state) || "landed".equals(b.state))) {
                 rect(b.x, b.curY, b.w, b.h, new Color(0.42f, 0.29f, 0.17f, 1f));
                 rect(b.x + 4, b.curY + 4, b.w - 8, b.h - 8, COL_CRUMBLE);
             }
@@ -1107,7 +1188,8 @@ public class GameScreen extends ScreenAdapter {
                 continue;
             }
             if ("active".equals(b.state)) {
-                if ("sky".equals(b.kind)) drawBombIcon(b.x, b.curY, 14);
+                if (b.missile) drawMissile(b);
+                else if ("sky".equals(b.kind)) drawBombIcon(b.x, b.curY, 14);
                 else drawBombIcon(b.curX, b.y, 14);
             }
         }
@@ -1201,6 +1283,26 @@ public class GameScreen extends ScreenAdapter {
         }
         float f = (t - 0.5f) / 0.5f;
         return new Color(MathUtils.lerp(0.235f, 0.141f, f), MathUtils.lerp(0.188f, 0.114f, f), MathUtils.lerp(0.333f, 0.204f, f), 1f);
+    }
+
+    private void drawChasingGhost() {
+        if (!levelDef.chasingGhost) return;
+        float alpha = ghostTime < levelDef.ghostDelay ? 0.65f : 1f;
+        for (int i = 0; i < 5; i++) {
+            float x = ghostX - 3 + i * 7;
+            float rise = 10 + (float) Math.sin(ghostTime * 13 + i * 1.7) * 7;
+            shapes.setColor(1f, i % 2 == 0 ? 0.35f : 0.71f, 0.11f, alpha);
+            shapes.triangle(x - 5, ghostY + 24, x + 1, ghostY - rise, x + 8, ghostY + 24);
+        }
+        shapes.setColor(0.9f, 0.17f, 0.22f, alpha);
+        shapes.rect(ghostX, ghostY + 6, 26, 26);
+        shapes.rect(ghostX + 6, ghostY, 14, 6);
+        shapes.circle(ghostX + 6, ghostY + 6, 6);
+        shapes.circle(ghostX + 20, ghostY + 6, 6);
+        shapes.triangle(ghostX, ghostY + 30, ghostX + 6, ghostY + 36, ghostX + 13, ghostY + 30);
+        shapes.triangle(ghostX + 13, ghostY + 30, ghostX + 20, ghostY + 36, ghostX + 26, ghostY + 30);
+        shapes.setColor(1f, 0.95f, 0.66f, alpha);
+        shapes.rect(ghostX + (player.x >= ghostX ? 17 : 5), ghostY + 9, 5, 5);
     }
 
     private void drawPlayer() {

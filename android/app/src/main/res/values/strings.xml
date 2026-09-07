@@ -1,4 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Not A Troll Game</string>
+    <string name="app_name">Evil Devil Ghost | Not A Troll</string>
+
+    <string name="reminder_channel_name">Recordatorios</string>
+    <string name="reminder_channel_description">Avisos para que no te olvides de jugar</string>
+
+    <string-array name="reminder_messages">
+        <item>Desafía tus límites 💪</item>
+        <item>¿Puedes pasar este nivel? 😈</item>
+        <item>El troll te está esperando…</item>
+        <item>Un ratito de juego no le hace mal a nadie 👀</item>
+        <item>¿Ya rompiste tu récord de hoy?</item>
+        <item>Tu personaje te extraña 🥲</item>
+        <item>Vuelve y demuestra de qué estás hecho</item>
+        <item>Hoy es un buen día para superarte</item>
+    </string-array>
 </resources>

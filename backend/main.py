@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import secrets
 import sqlite3
-from datetime import datetime, timezone
+import urllib.error
+import urllib.request
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -20,6 +23,11 @@ BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = Path(os.getenv("FRONTEND_DIR", BASE_DIR.parent))
 DB_PATH = Path(os.getenv("DATABASE_PATH", BASE_DIR / "scores.db"))
 DEFAULT_ORIGINS = ["*"]
+
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+RESEND_FROM = os.getenv("RESEND_FROM", "Evil Devil Ghost | Not A Troll Game <onboarding@resend.dev>")
+RESET_CODE_TTL_MINUTES = 10
+MAX_RESET_ATTEMPTS = 5
 
 
 def get_allowed_origins() -> list[str]:
@@ -46,7 +54,7 @@ app.add_middleware(
 class ScoreIn(BaseModel):
     player: str = Field(default="Anonimo", max_length=32)
     deaths: int = Field(ge=0, le=9999)
-    levels_completed: int = Field(ge=1, le=99)
+    levels_completed: int = Field(ge=1, le=level_count())
     score: int = Field(ge=0, le=1_000_000)
 
 
@@ -57,7 +65,7 @@ class ScoreOut(ScoreIn):
 
 class ProgressIn(BaseModel):
     player_id: str = Field(min_length=1, max_length=64)
-    unlocked: int = Field(ge=1, le=99)
+    unlocked: int = Field(ge=1, le=level_count())
 
 
 class ProgressOut(BaseModel):
@@ -76,6 +84,17 @@ class AuthIn(BaseModel):
 class AuthOut(BaseModel):
     email: str
     player_id: str
+    coin_floor: int = 0
+
+
+class ForgotPasswordIn(BaseModel):
+    email: str = Field(min_length=5, max_length=254)
+
+
+class ResetPasswordIn(BaseModel):
+    email: str = Field(min_length=5, max_length=254)
+    code: str = Field(min_length=6, max_length=6)
+    password: str = Field(min_length=4, max_length=72)
 
 
 def connect() -> sqlite3.Connection:
@@ -117,10 +136,75 @@ def init_db() -> None:
             )
             """
         )
+        # Migrate the old link-token reset table (if present) to the
+        # code-based schema below.
+        existing_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(password_resets)")
+        }
+        if existing_columns and "code_hash" not in existing_columns:
+            conn.execute("DROP TABLE password_resets")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS password_resets (
+                email TEXT PRIMARY KEY,
+                code_hash TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
 
 
 def hash_password(password: str, salt: str) -> str:
     return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), 200_000).hex()
+
+
+def hash_code(code: str) -> str:
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def send_reset_email(email: str, code: str) -> None:
+    if not RESEND_API_KEY:
+        print(f"[dev] Codigo de reseteo para {email}: {code}")
+        return
+    payload = json.dumps(
+        {
+            "from": RESEND_FROM,
+            "to": [email],
+            "subject": "Tu codigo para restablecer la contrasena - Not A Troll Game",
+            "html": (
+                "<p>Usa este codigo para restablecer tu contrasena:</p>"
+                f'<p style="font-size:28px;font-weight:bold;letter-spacing:4px">{code}</p>'
+                f"<p>Vence en {RESET_CODE_TTL_MINUTES} minutos. "
+                "Si no lo pediste, ignora este correo.</p>"
+            ),
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json",
+            # Cloudflare (in front of Resend's API) blocks urllib's default
+            # "Python-urllib/..." user agent as a bot signature (error 1010).
+            "User-Agent": "NotATrollGame-Backend/1.0",
+        },
+    )
+    try:
+        urllib.request.urlopen(request, timeout=10)
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        print(f"No se pudo enviar el correo de reseteo a {email}: {exc} - {body}")
+    except urllib.error.URLError as exc:
+        print(f"No se pudo enviar el correo de reseteo a {email}: {exc}")
+
+
+# Server-only test account; store only a salted password hash.
+TEST_EMAIL = "admin@bfjgames.com"
+TEST_PASSWORD_SALT = "0e72a499c3af68f0c5d9a32238a49a17"
+TEST_PASSWORD_HASH = "a28b9b4fb3185732078d703d399a1656dbebf286a25c8b1950e7563eb46eca2c"
 
 
 def player_id_for(email: str) -> str:
@@ -130,6 +214,16 @@ def player_id_for(email: str) -> str:
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    with connect() as conn:
+        conn.execute(
+            """INSERT INTO users (email, password_hash, password_salt, created_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(email) DO UPDATE SET
+                   password_hash = excluded.password_hash,
+                   password_salt = excluded.password_salt""",
+            (TEST_EMAIL, TEST_PASSWORD_HASH, TEST_PASSWORD_SALT,
+             datetime.now(timezone.utc).isoformat()),
+        )
 
 
 @app.get("/health")
@@ -235,6 +329,72 @@ def login(auth: AuthIn) -> dict:
         hash_password(auth.password, row["password_salt"]), row["password_hash"]
     ):
         raise HTTPException(status_code=401, detail="Correo o contrasena incorrectos.")
+    player_id = player_id_for(email)
+    coin_floor = 0
+    if email == TEST_EMAIL:
+        with connect() as conn:
+            conn.execute(
+                """INSERT INTO progress (player_id, unlocked, updated_at) VALUES (?, ?, ?)
+                   ON CONFLICT(player_id) DO UPDATE SET
+                       unlocked = excluded.unlocked, updated_at = excluded.updated_at""",
+                (player_id, playable_level_count(), datetime.now(timezone.utc).isoformat()),
+            )
+        coin_floor = 500
+    return {"email": email, "player_id": player_id, "coin_floor": coin_floor}
+
+
+@app.post("/auth/forgot-password", status_code=202)
+def forgot_password(payload: ForgotPasswordIn) -> dict:
+    email = payload.email.strip().lower()
+    now = datetime.now(timezone.utc)
+    with connect() as conn:
+        user = conn.execute("SELECT email FROM users WHERE email = ?", (email,)).fetchone()
+        if user is not None:
+            code = f"{secrets.randbelow(1_000_000):06d}"
+            expires_at = (now + timedelta(minutes=RESET_CODE_TTL_MINUTES)).isoformat()
+            conn.execute(
+                """
+                INSERT INTO password_resets (email, code_hash, expires_at, attempts)
+                VALUES (?, ?, ?, 0)
+                ON CONFLICT(email) DO UPDATE SET
+                    code_hash = excluded.code_hash,
+                    expires_at = excluded.expires_at,
+                    attempts = 0
+                """,
+                (email, hash_code(code), expires_at),
+            )
+            send_reset_email(email, code)
+    # Same response regardless of whether the email exists, to avoid leaking
+    # which addresses have accounts.
+    return {"detail": "Si el correo existe, enviamos un codigo para restablecer la contrasena."}
+
+
+@app.post("/auth/reset-password", response_model=AuthOut)
+def reset_password(payload: ResetPasswordIn) -> dict:
+    email = payload.email.strip().lower()
+    now = datetime.now(timezone.utc)
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT code_hash, expires_at, attempts FROM password_resets WHERE email = ?",
+            (email,),
+        ).fetchone()
+        if row is None or datetime.fromisoformat(row["expires_at"]) < now:
+            raise HTTPException(status_code=400, detail="El codigo es invalido o ya vencio.")
+        if row["attempts"] >= MAX_RESET_ATTEMPTS:
+            conn.execute("DELETE FROM password_resets WHERE email = ?", (email,))
+            conn.commit()
+            raise HTTPException(status_code=400, detail="Demasiados intentos. Solicita un codigo nuevo.")
+        if not secrets.compare_digest(hash_code(payload.code), row["code_hash"]):
+            conn.execute("UPDATE password_resets SET attempts = attempts + 1 WHERE email = ?", (email,))
+            conn.commit()
+            raise HTTPException(status_code=400, detail="El codigo es invalido o ya vencio.")
+        salt = secrets.token_hex(16)
+        password_hash = hash_password(payload.password, salt)
+        conn.execute(
+            "UPDATE users SET password_hash = ?, password_salt = ? WHERE email = ?",
+            (password_hash, salt, email),
+        )
+        conn.execute("DELETE FROM password_resets WHERE email = ?", (email,))
     return {"email": email, "player_id": player_id_for(email)}
 
 
@@ -279,5 +439,19 @@ def create_score(score: ScoreIn) -> dict:
     return dict(row)
 
 
+class PublicStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        # Never expose backend source, databases, deployment files or dotfiles.
+        parts = Path(path.replace("\\", "/")).parts
+        allowed = {"index.html", "game.js", "game.min.js", "style.css", "recursos", "favicon.ico"}
+        if parts and (parts[0] not in allowed or any(part.startswith(".") for part in parts)):
+            if path not in (".", ""):
+                raise HTTPException(status_code=404, detail="Not found")
+        response = await super().get_response(path, scope)
+        if path in (".", "", "index.html", "game.js", "game.min.js"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 if FRONTEND_DIR.exists():
-    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+    app.mount("/", PublicStaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

@@ -17,6 +17,30 @@ const overlaySub = document.getElementById('overlaySub');
 const progressFill = document.getElementById('progressFill');
 document.getElementById('restartBtn').onclick = () => restartLevel();
 
+// ---------- Ending cinematic (shown after clearing the last level) ----------
+const finalVideoScreen = document.getElementById('finalVideoScreen');
+const finalVideo = document.getElementById('finalVideo');
+const finalVideoSkipBtn = document.getElementById('finalVideoSkipBtn');
+let resolveFinalVideo = null;
+function hideFinalVideo() {
+  if (finalVideoScreen.hidden) return;
+  finalVideo.pause();
+  finalVideoScreen.hidden = true;
+  if (resolveFinalVideo) { const r = resolveFinalVideo; resolveFinalVideo = null; r(); }
+}
+finalVideo.addEventListener('ended', hideFinalVideo);
+finalVideoSkipBtn.addEventListener('click', hideFinalVideo);
+function playFinalVideo() {
+  return new Promise(resolve => {
+    resolveFinalVideo = resolve;
+    paused = true;
+    Ads.gameplayStop();
+    finalVideoScreen.hidden = false;
+    try { finalVideo.currentTime = 0; } catch (e) { /* not seekable yet */ }
+    finalVideo.play().catch(() => {});
+  });
+}
+
 // ---------- Studio splash ----------
 const splashScreen = document.getElementById('splashScreen');
 let splashActive = true;
@@ -27,19 +51,36 @@ let splashAudioFinished = false;
 splashSound.addEventListener('ended', () => { splashAudioFinished = true; });
 splashSound.addEventListener('error', () => { splashAudioFinished = true; });
 
+// Several listeners (pointerdown, click, keydown) can all fire for the same
+// single gesture that dismisses the splash — without this latch each one
+// would call play() again and restart the sting from 0, which is what made
+// it sound like it was retriggering/overlapping itself. It must play
+// exactly once, ever, no matter how many of those listeners fire.
+let splashSoundStarted = false;
 function playSplashSound() {
   // The logo sting is allowed only while the splash is visible. Once the
   // intro has passed, clicks and keys must never replay it.
-  if (!splashActive || splashAudioFinished) return;
+  if (!splashActive || splashAudioFinished || splashSoundStarted) return;
+  splashSoundStarted = true;
   try {
     splashSound.currentTime = 0;
-    splashSound.play().catch(() => {});
-  } catch (e) { /* autoplay can be blocked until the first gesture */ }
+    splashSound.play().catch(() => {
+      splashSoundStarted = false;
+      if (!splashActive) splashAudioFinished = true;
+    });
+  } catch (e) {
+    // autoplay can be blocked until the first gesture — allow a retry then
+    splashSoundStarted = false;
+    if (!splashActive) splashAudioFinished = true;
+  }
 }
 
 function dismissSplash() {
   if (!splashActive) return;
   splashActive = false;
+  // Blocked autoplay never emits "ended". Once the logo is gone, discard
+  // that unplayed sting so it cannot block music or replay on a later click.
+  if (!splashSoundStarted) splashAudioFinished = true;
   // Let the sting finish playing even if the visual splash is skipped —
   // stopping it here would cut it off the instant a click/keydown unlocks
   // audio, since play() and this dismiss fire in the same handler.
@@ -162,6 +203,7 @@ musicToggleBtn.addEventListener('click', () => {
   musicOn = !musicOn;
   localStorage.setItem('notTrollMusicOn', musicOn ? '1' : '0');
   applyMusicButtonLabel();
+  updateMusicPlayback();
 });
 applyMusicButtonLabel();
 
@@ -181,7 +223,7 @@ document.addEventListener('visibilitychange', () => {
 function updateMusicPlayback() {
   // The studio sting always has priority. Start the game/menu music only
   // after the splash audio has ended.
-  if (splashActive || !splashAudioFinished) {
+  if (document.hidden || splashActive || !splashAudioFinished) {
     if (!bgMusic.paused) bgMusic.pause();
     if (!menuMusic.paused) menuMusic.pause();
     return;
@@ -201,8 +243,8 @@ function primeMusic() {
   playSplashSound();
   if (splashAudioFinished) updateMusicPlayback();
 }
-window.addEventListener('keydown', primeMusic, { once: true });
-window.addEventListener('pointerdown', primeMusic, { once: true });
+window.addEventListener('keydown', primeMusic);
+window.addEventListener('pointerdown', primeMusic);
 
 // ---------- Click sound — any UI button (menu, map node, options, HUD),
 // but not the on-screen movement pad, which fires far too rapidly for it. ----------
@@ -445,13 +487,16 @@ if ((window.CrazyGames && window.CrazyGames.SDK) || window.PokiSDK) {
 // belong on our own domain — every portal (CrazyGames, Poki, itch.io) loads
 // this same file from THEIR origin and forbids a game selling anything
 // outside their own payment system. OWN_HOSTS comes from the inline
-// bootstrap <script> in index.html (shared global scope, same page).
-const REAL_MONEY_ENABLED = typeof OWN_HOSTS !== 'undefined' && OWN_HOSTS.includes(location.hostname);
+// bootstrap <script> in index.html (shared global scope, same page). The
+// Android app loads this file from file:///android_asset/, so
+// location.hostname is empty and never matches OWN_HOSTS — detect that
+// WebView directly via window.AndroidBilling (set up in MainActivity.java)
+// since its purchases go through Google Play Billing, not a foreign portal.
+const REAL_MONEY_ENABLED = !!window.AndroidBilling ||
+  (typeof OWN_HOSTS !== 'undefined' && OWN_HOSTS.includes(location.hostname));
 if (!REAL_MONEY_ENABLED) {
-  const shopAdsRow = document.getElementById('shopAdsRow');
-  if (shopAdsRow) shopAdsRow.hidden = true;
-  const shopSubRow = document.getElementById('shopSubRow');
-  if (shopSubRow) shopSubRow.hidden = true;
+  const premiumTab = document.querySelector('#shopTabs [data-shop-tab="premium"]');
+  if (premiumTab) premiumTab.hidden = true;
 }
 
 function getPlayerId() {
@@ -568,7 +613,7 @@ function awardCoins(amount) {
 }
 
 function updateCoinLabel() {
-  if (coinLabel) coinLabel.textContent = '🪙 ' + wallet.coins;
+  if (coinLabel) coinLabel.textContent = '\u{1FA99} ' + wallet.coins;
 }
 
 const account0 = getAccount();
@@ -609,14 +654,31 @@ async function saveProgress(unlocked) {
 const authForm = document.getElementById('authForm');
 const authEmail = document.getElementById('authEmail');
 const authPassword = document.getElementById('authPassword');
+const authPasswordToggle = document.getElementById('authPasswordToggle');
 const authError = document.getElementById('authError');
 const authSubmitBtn = document.getElementById('authSubmitBtn');
 const authTabLogin = document.getElementById('authTabLogin');
 const authTabRegister = document.getElementById('authTabRegister');
+const authTabs = document.getElementById('authTabs');
 const profileLoggedOut = document.getElementById('profileLoggedOut');
 const profileLoggedIn = document.getElementById('profileLoggedIn');
 const profileWelcome = document.getElementById('profileWelcome');
+const forgotForm = document.getElementById('forgotForm');
+const forgotEmail = document.getElementById('forgotEmail');
+const forgotError = document.getElementById('forgotError');
+const forgotSubmitBtn = document.getElementById('forgotSubmitBtn');
+const forgotPasswordLink = document.getElementById('forgotPasswordLink');
+const forgotBackLink = document.getElementById('forgotBackLink');
+const codeForm = document.getElementById('codeForm');
+const codeSentNotice = document.getElementById('codeSentNotice');
+const resetCode = document.getElementById('resetCode');
+const resetPassword = document.getElementById('resetPassword');
+const resetPasswordToggle = document.getElementById('resetPasswordToggle');
+const resetError = document.getElementById('resetError');
+const resetSubmitBtn = document.getElementById('resetSubmitBtn');
+const codeBackLink = document.getElementById('codeBackLink');
 let authMode = 'login';
+let resetEmail = '';
 
 function setAuthMode(mode) {
   authMode = mode;
@@ -625,10 +687,109 @@ function setAuthMode(mode) {
   authSubmitBtn.textContent = mode === 'login' ? 'Iniciar sesion' : 'Crear cuenta';
   authPassword.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
   authError.hidden = true;
+  forgotPasswordLink.hidden = mode !== 'login';
 }
 
 authTabLogin.addEventListener('click', () => setAuthMode('login'));
 authTabRegister.addEventListener('click', () => setAuthMode('register'));
+
+// Profile "logged out" area cycles through three mutually exclusive views:
+// the login/register form, the "send me a code" form, and the "enter code +
+// new password" form.
+function setProfileView(view) {
+  authForm.hidden = view !== 'auth';
+  authTabs.hidden = view !== 'auth';
+  forgotForm.hidden = view !== 'forgot';
+  codeForm.hidden = view !== 'code';
+  authError.hidden = true;
+  forgotError.hidden = true;
+  resetError.hidden = true;
+}
+
+forgotPasswordLink.addEventListener('click', () => {
+  forgotForm.reset();
+  setProfileView('forgot');
+});
+forgotBackLink.addEventListener('click', () => setProfileView('auth'));
+codeBackLink.addEventListener('click', () => setProfileView('auth'));
+
+forgotForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!API_BASE_URL) {
+    forgotError.textContent = 'Backend no configurado.';
+    forgotError.hidden = false;
+    return;
+  }
+  const email = forgotEmail.value.trim();
+  forgotSubmitBtn.disabled = true;
+  forgotError.hidden = true;
+  try {
+    const res = await fetch(API_BASE_URL + '/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      forgotError.textContent = data.detail || 'No se pudo completar la operacion.';
+      forgotError.hidden = false;
+      return;
+    }
+    resetEmail = email;
+    codeSentNotice.textContent = 'Si el correo existe, enviamos un codigo a ' + email + '.';
+    codeForm.reset();
+    setProfileView('code');
+  } catch (err) {
+    forgotError.textContent = 'No se pudo conectar con el servidor.';
+    forgotError.hidden = false;
+  } finally {
+    forgotSubmitBtn.disabled = false;
+  }
+});
+
+resetPasswordToggle.addEventListener('click', () => {
+  const visible = resetPassword.type === 'password';
+  resetPassword.type = visible ? 'text' : 'password';
+  resetPasswordToggle.classList.toggle('showing', visible);
+});
+
+codeForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!API_BASE_URL) {
+    resetError.textContent = 'Backend no configurado.';
+    resetError.hidden = false;
+    return;
+  }
+  resetSubmitBtn.disabled = true;
+  resetError.hidden = true;
+  try {
+    const res = await fetch(API_BASE_URL + '/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: resetEmail, code: resetCode.value.trim(), password: resetPassword.value }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      resetError.textContent = data.detail || 'No se pudo completar la operacion.';
+      resetError.hidden = false;
+      return;
+    }
+    await applyLoggedInProgress(data);
+    refreshProfileScreen();
+  } catch (err) {
+    resetError.textContent = 'No se pudo conectar con el servidor.';
+    resetError.hidden = false;
+  } finally {
+    resetSubmitBtn.disabled = false;
+  }
+});
+
+function setPasswordVisible(visible) {
+  authPassword.type = visible ? 'text' : 'password';
+  authPasswordToggle.classList.toggle('showing', visible);
+  authPasswordToggle.setAttribute('aria-label', visible ? 'Ocultar contrasena' : 'Mostrar contrasena');
+}
+authPasswordToggle.addEventListener('click', () => setPasswordVisible(authPassword.type === 'password'));
 
 function refreshProfileScreen() {
   const account = getAccount();
@@ -639,30 +800,38 @@ function refreshProfileScreen() {
   } else {
     profileLoggedOut.hidden = false;
     profileLoggedIn.hidden = true;
+    setProfileView('auth');
     authForm.reset();
-    authError.hidden = true;
     setAuthMode('login');
+    setPasswordVisible(false);
   }
 }
 
 function renderShop() {
-  document.getElementById('shopCoinBalance').textContent = '🪙 ' + wallet.coins;
+  document.getElementById('shopCoinBalance').textContent = wallet.coins;
 
   const list = document.getElementById('shopSkinsList');
   list.innerHTML = '';
   for (const id in SKINS) {
     const skin = SKINS[id];
-    const row = document.createElement('div');
-    row.className = 'optionRow';
-    const swatch = document.createElement('span');
-    swatch.className = 'skinSwatch';
-    swatch.style.background = skin.color;
-    const label = document.createElement('span');
-    label.textContent = skin.name;
-    const left = document.createElement('span');
-    left.className = 'skinSwatchLabel';
-    left.appendChild(swatch);
-    left.appendChild(label);
+    const card = document.createElement('div');
+    card.className = 'shopCard';
+
+    const glow = document.createElement('div');
+    glow.className = 'playerGlow';
+
+    const body = document.createElement('div');
+    body.className = 'playerShape';
+    body.style.setProperty('--player-color', skin.color);
+    body.style.setProperty('--eye-color', id === 'white' ? '#000' : '#fff');
+    body.appendChild(document.createElement('span')).className = 'playerFoot';
+    body.appendChild(document.createElement('span')).className = 'playerFoot';
+    body.appendChild(document.createElement('span')).className = 'playerEye';
+
+    const name = document.createElement('span');
+    name.className = 'shopCardName';
+    name.textContent = skin.name;
+
     const btn = document.createElement('button');
     btn.className = 'menuBtn';
     const owned = wallet.ownedSkins.includes(id);
@@ -687,9 +856,11 @@ function renderShop() {
         renderShop();
       };
     }
-    row.appendChild(left);
-    row.appendChild(btn);
-    list.appendChild(row);
+    card.appendChild(glow);
+    card.appendChild(body);
+    card.appendChild(name);
+    card.appendChild(btn);
+    list.appendChild(card);
   }
 
   document.getElementById('shopCheckpointCount').textContent = wallet.checkpointCharges;
@@ -717,11 +888,11 @@ function renderSubscription() {
   if (!label || !btn) return;
   if (subState.active) {
     const until = subState.expiresAt ? new Date(subState.expiresAt).toLocaleDateString() : '';
-    label.textContent = 'SUSCRIPCIÓN PREMIUM (Cero Anunciós + ' + SUBSCRIBER_MONTHLY_COINS + ' monedas /mes)' + (until ? ' — Activa hasta ' + until : ' — Activa');
+    label.textContent = 'SUSCRIPCIÓN PREMIUM' + (until ? ' — Activa hasta ' + until : ' — Activa');
     btn.textContent = 'Gestionar';
     btn.onclick = () => Subscription.manage();
   } else {
-    label.textContent = 'SUSCRIPCIÓN PREMIUM (Cero Anunciós + ' + SUBSCRIBER_MONTHLY_COINS + ' monedas /mes)';
+    label.textContent = 'SUSCRIPCIÓN PREMIUM';
     btn.textContent = 'S/ ' + SUBSCRIPTION_BASE_PRICE_PEN.toFixed(2);
     btn.onclick = () => Subscription.purchase();
   }
@@ -730,6 +901,11 @@ function renderSubscription() {
 async function applyLoggedInProgress(account) {
   const localUnlocked = unlockedLevels;
   setAccountSession(account);
+  if (Number.isSafeInteger(account.coin_floor) && account.coin_floor > wallet.coins) {
+    wallet.coins = account.coin_floor;
+    saveWallet();
+    updateCoinLabel();
+  }
   Subscription.identify(account.player_id);
   try {
     const progress = await fetchProgress();
@@ -949,6 +1125,7 @@ function closeAllScreens() {
   profileMenu.hidden = true;
   infoMenu.hidden = true;
   shopMenu.hidden = true;
+  hideFinalVideo();
   paused = false;
   if (level) Ads.gameplayStart();
 }
@@ -973,8 +1150,22 @@ function openInfoMenu() {
 
 function openShopMenu() {
   showScreen(shopMenu);
+  setShopTab('skins');
   renderShop();
 }
+
+function setShopTab(tab) {
+  document.querySelectorAll('#shopTabs [data-shop-tab]').forEach(t => {
+    t.classList.toggle('active', t.dataset.shopTab === tab);
+  });
+  document.getElementById('shopPanelSkins').hidden = tab !== 'skins';
+  document.getElementById('shopPanelAccesorios').hidden = tab !== 'accesorios';
+  document.getElementById('shopPanelPremium').hidden = tab !== 'premium';
+}
+
+document.querySelectorAll('#shopTabs [data-shop-tab]').forEach(t => {
+  t.addEventListener('click', () => setShopTab(t.dataset.shopTab));
+});
 
 document.addEventListener('click', e => {
   const btn = e.target.closest('#playBtn, #mapMenuBtn, #optionsMenuBtn, #profileMenuBtn, #infoMenuBtn, #shopMenuBtn');
@@ -1072,8 +1263,10 @@ async function fetchLevel(index) {
 // ---------- Runtime state ----------
 let levelIndex = 0;
 let totalLevels = 0;
+let camY = 0;
 let level, player, camX, camTarget, deaths, totalDeaths, particles, stars, shake, portalMotes;
 let saws = [], wallSpikes = [], platformState = [];
+let chasingGhost = null;
 let fallingBlocks = [], bombs = [], teleporters = [], runWall = null;
 let state = 'menu'; // menu | intro | playing | dead | complete
 let stateTimer = 0;
@@ -1105,7 +1298,7 @@ async function loadLevel(i) {
     checkpointUsedThisLevel = false;
     if (i === 0) totalDeaths = 0;
     levelLabel.textContent = level.name;
-    deathLabel.textContent = 'Muertes: 0';
+    deathLabel.textContent = '\u{1F480} 0';
     progressFill.style.width = '0%';
     stars = makeStars(level.width);
     portalMotes = makePortalMotes();
@@ -1115,7 +1308,7 @@ async function loadLevel(i) {
     advancingLevel = false;
     state = 'error';
     levelLabel.textContent = 'API requerida';
-    deathLabel.textContent = 'Muertes: 0';
+    deathLabel.textContent = '\u{1F480} 0';
     overlayTitle.textContent = API_BASE_URL ? 'Servidor no responde' : 'Backend no configurado';
     overlaySub.textContent = e.message;
     overlayTitle.classList.add('show');
@@ -1143,6 +1336,7 @@ async function advanceAfterComplete() {
   if (reachedEnd) {
     await submitFinalScore();
     await saveProgress(Math.min(totalLevels, unlockedLevels));
+    await playFinalVideo();
     await loadLevel(0);
     return;
   }
@@ -1203,7 +1397,8 @@ function resetEntities() {
     bounced: false,
     skinColor: SKINS[wallet.equippedSkin] ? SKINS[wallet.equippedSkin].color : SKINS.default.color,
   };
-  camX = player.x - W / 2;
+  camX = Math.max(0, Math.min(player.x - W / 2, level.width - W));
+  camY = cameraTargetY();
   camTarget = camX;
   particles = [];
   shake = { t: 0, mag: 0 };
@@ -1239,6 +1434,7 @@ function resetEntities() {
     gone: false,
   }));
   teleporters = (level.teleporters || []).map(tp => ({ ...tp }));
+  chasingGhost = level.chasingGhost ? { ...level.chasingGhost, x: Math.max(24, spawn.x - level.chasingGhost.startDistance), y: spawn.y, w: 26, h: 36, t: 0 } : null;
   runWall = level.runWall ? { ...level.runWall, x: level.runWall.startX } : null;
 }
 
@@ -1246,7 +1442,7 @@ function restartLevel() {
   if (!level) return;
   deaths++;
   totalDeaths++;
-  deathLabel.textContent = 'Muertes: ' + deaths;
+  deathLabel.textContent = '\u{1F480} ' + deaths;
   resetEntities();
   state = 'playing';
   Ads.gameplayStart();
@@ -1380,7 +1576,11 @@ function frame(now) {
   if (dt > 0.05) dt = 0.05; // clamp big pauses (tab switch etc.)
 
   update(dt);
-  render();
+  // Every menu/overlay screen (including the ending video) is fully opaque
+  // and covers the canvas, so redrawing the hidden scene behind it while
+  // paused is pure wasted GPU/CPU work — and on the ending video specifically,
+  // that contention with video decode is what made playback look choppy.
+  if (!paused) render();
   updateMusicPlayback();
   requestAnimationFrame(frame);
 }
@@ -1431,14 +1631,37 @@ function update(dt) {
   updateBombs(dt);
   updateTeleporters(dt);
   updateRunWall(dt);
+  updateChasingGhost(dt);
   updateParticles(dt);
   checkHazards();
   checkGoal();
 
   camTarget = Math.max(0, Math.min(player.x - W / 2 + player.facing * 40, level.width - W));
   camX += (camTarget - camX) * Math.min(1, CAM_SMOOTH * dt);
+  camY += (cameraTargetY() - camY) * Math.min(1, CAM_SMOOTH * dt);
 
-  progressFill.style.width = Math.min(100, Math.max(0, (player.x / level.width) * 100)) + '%';
+  progressFill.style.width = Math.min(100, Math.max(0, levelProgress() * 100)) + '%';
+}
+
+function cameraTargetY() {
+  if (!level.verticalCamera) return 0;
+  return Math.max(0, Math.min(player.y + player.h / 2 - H * 0.45, level.height - H));
+}
+
+function levelProgress() {
+  if (!level.routeFloors) return player.x / level.width;
+  const floors = level.routeFloors;
+  let floor = 0;
+  for (let i = 1; i < floors.length; i++) {
+    if (Math.abs(player.y + player.h - floors[i]) < Math.abs(player.y + player.h - floors[floor])) floor = i;
+  }
+  const across = Math.max(0, Math.min(1, (player.x - 200) / (level.width - 400)));
+  return (floor + (floor % 2 ? 1 - across : across)) / floors.length;
+}
+
+function trapReached(trap) {
+  if (trap.triggerY !== undefined && (player.y + player.h < trap.triggerY || player.y > trap.triggerY + trap.triggerH)) return false;
+  return trap.triggerDir === -1 ? player.x < trap.triggerX : player.x + player.w > trap.triggerX;
 }
 
 function updateShake(dt) {
@@ -1524,7 +1747,7 @@ function updatePlayer(dt) {
     if (Math.random() < 0.35) spawnDust(player.x + player.w / 2, player.y + player.h, 1);
   }
 
-  player.falling = !player.onGround && player.y > H - 40 - GROUND_LIFT;
+  player.falling = !player.onGround && player.y > (level.height || H) - 40 - GROUND_LIFT;
   if (player.falling) player.rotation += dt * 9 * (player.facing || 1);
   else player.rotation *= Math.max(0, 1 - dt * 10);
 }
@@ -1704,7 +1927,7 @@ function updateFallingBlocks(dt) {
   for (const b of fallingBlocks) {
     if (b.gone) continue;
     if (b.state === 'idle') {
-      if (player.x + player.w > b.triggerX) { b.state = 'warn'; b.t = 0; }
+      if (trapReached(b)) { b.state = 'warn'; b.t = 0; }
     } else if (b.state === 'warn') {
       b.t += dt;
       if (b.t >= b.delay) { b.state = 'falling'; b.vy = 60; }
@@ -1723,6 +1946,7 @@ function updateFallingBlocks(dt) {
         });
       }
     } else if (b.state === 'landed') {
+      if (b.ceilingSpikes && !player.dead && overlap(player, rect(b.x, b.curY, b.w, b.h))) killPlayer('spike');
       b.t += dt;
       if (b.t > 0.6) b.gone = true;
     }
@@ -1733,11 +1957,12 @@ function updateBombs(dt) {
   for (const b of bombs) {
     if (b.gone) continue;
     if (b.state === 'idle') {
-      if (player.x + player.w > b.triggerX) { b.state = 'warn'; b.t = 0; }
+      if (trapReached(b)) { b.state = 'warn'; b.t = 0; }
     } else if (b.state === 'warn') {
       b.t += dt;
       if (b.t >= b.delay) {
         b.state = 'active';
+        if (b.homing) { b.chasePlatform = player.groundPlatform; b.leftPlatform = !player.onGround; }
         if (b.kind === 'sky') { b.curY = b.y; b.vy = 40; }
       }
     } else if (b.state === 'active') {
@@ -1746,7 +1971,7 @@ function updateBombs(dt) {
         b.curY += b.vy * dt;
         const dx = (player.x + player.w / 2) - b.x;
         const dy = (player.y + player.h / 2) - b.curY;
-        if (!player.dead && Math.hypot(dx, dy) < b.radius) killPlayer('bomb');
+        if (!player.dead && (b.missile ? overlap(player, rect(b.x - 8, b.curY - 18, 16, 36)) : Math.hypot(dx, dy) < b.radius)) killPlayer('bomb');
         if (b.curY >= b.groundY) {
           const bdx = (player.x + player.w / 2) - b.x;
           const bdy = (player.y + player.h / 2) - b.groundY;
@@ -1759,11 +1984,24 @@ function updateBombs(dt) {
           });
           b.gone = true;
         }
+      } else if (b.homing) {
+        if (!player.onGround) b.leftPlatform = true;
+        if (!b.chasePlatform && player.onGround) { b.chasePlatform = player.groundPlatform; b.leftPlatform = false; }
+        if (b.leftPlatform && player.onGround && player.groundPlatform && player.groundPlatform !== b.chasePlatform) {
+          b.gone = true;
+          spawnBurst(b.curX, b.curY, 10, { color: '#62ebff', size: 3, life: 0.35, maxLife: 0.35, speedRange: 100, gravity: 0, type: 'spark' });
+          continue;
+        }
+        const dx = player.x + player.w / 2 - b.curX, dy = player.y + player.h / 2 - b.curY;
+        const distance = Math.hypot(dx, dy), step = Math.min(distance, b.speed * dt);
+        b.homingAngle = Math.atan2(dy, dx);
+        if (distance > 0) { b.curX += dx / distance * step; b.curY += dy / distance * step; }
+        if (!player.dead && overlap(player, rect(b.curX - 16, b.curY - 8, 32, 16))) killPlayer('bomb');
       } else {
         b.curX += b.speed * b.dir * dt;
         const dx = (player.x + player.w / 2) - b.curX;
         const dy = (player.y + player.h / 2) - b.y;
-        if (!player.dead && Math.hypot(dx, dy) < b.radius) {
+        if (!player.dead && (b.missile ? overlap(player, rect(b.curX - 18, b.y - 8, 36, 16)) : Math.hypot(dx, dy) < b.radius)) {
           killPlayer('bomb');
           addShake(7, 0.3);
           flash = Math.max(flash, 0.35);
@@ -1789,6 +2027,7 @@ function updateTeleporters(dt) {
       });
       player.x = tp.toX;
       player.y = tp.toY;
+      if (level.verticalCamera) { camY = cameraTargetY(); camX = Math.max(0, Math.min(player.x - W / 2, level.width - W)); }
       player.vx = 0;
       player.vy = 0;
       spawnBurst(player.x + player.w / 2, player.y + player.h / 2, 14, {
@@ -1800,6 +2039,32 @@ function updateTeleporters(dt) {
       break;
     }
   }
+}
+
+function moveGhostAxis(ghost, axis, delta) {
+  if (!delta) return;
+  if (axis === 'x') ghost.x += delta; else ghost.y += delta;
+  for (const p of solidPlatforms()) {
+    if (!overlap(ghost, p)) continue;
+    if (axis === 'x') ghost.x = delta > 0 ? p.x - ghost.w : p.x + p.w;
+    else ghost.y = delta > 0 ? p.y - ghost.h : p.y + p.h;
+  }
+}
+
+function updateChasingGhost(dt) {
+  const ghost = chasingGhost;
+  if (!ghost || player.dead) return;
+  ghost.t += dt;
+  if (ghost.t < ghost.delay) return;
+  const dx = player.x - ghost.x, dy = player.y - ghost.y;
+  const distance = Math.hypot(dx, dy);
+  const speed = distance > 220 ? ghost.catchupSpeed : ghost.speed;
+  const step = Math.min(distance, speed * dt);
+  if (distance > 0) {
+    moveGhostAxis(ghost, 'x', dx / distance * step);
+    moveGhostAxis(ghost, 'y', dy / distance * step);
+  }
+  if (overlap(player, rect(ghost.x + 3, ghost.y + 3, ghost.w - 6, ghost.h - 6))) killPlayer('ghost');
 }
 
 function updateRunWall(dt) {
@@ -1842,7 +2107,7 @@ function checkHazards() {
     if (w.extend > 10 && overlap(player, spikeRect)) { killPlayer('spike'); return; }
   }
   // fell off the world
-  if (player.y > H + 200) killPlayer('void');
+  if (player.y > (level.height || H) + 200) killPlayer('void');
 }
 
 function checkGoal() {
@@ -1862,10 +2127,11 @@ function render() {
     shakeX = (Math.random() - 0.5) * shake.mag;
     shakeY = (Math.random() - 0.5) * shake.mag;
   }
-  ctx.translate(Math.round(-camX + shakeX), Math.round(shakeY));
+  ctx.translate(Math.round(-camX + shakeX), Math.round(-camY + shakeY));
 
   if (level && player) {
     drawPlatforms();
+    drawShelters();
     drawHazardsStatic();
     drawRunWall();
     drawTeleporters();
@@ -1874,6 +2140,7 @@ function render() {
     drawSaws();
     drawWallSpikes();
     drawGoal();
+    drawChasingGhost();
     drawCheckpoint();
     if (!player.dead || state === 'dead') drawPlayer();
     drawParticles();
@@ -2136,9 +2403,41 @@ function drawWallSpikes() {
   }
 }
 
+function drawShelters() {
+  for (const p of level.platforms || []) {
+    if (!p.shelter) continue;
+    ctx.fillStyle = '#62ebff'; ctx.fillRect(p.x, p.y, p.w, 5);
+  }
+}
+
+function drawMissile(b) {
+  ctx.save();
+  ctx.translate(b.kind === 'sky' ? b.x : b.curX, b.kind === 'sky' || b.homing ? b.curY : b.y);
+  if (b.kind === 'sky') ctx.rotate(Math.PI / 2);
+  else if (b.homing) ctx.rotate(b.homingAngle === undefined ? (b.dir === 1 ? 0 : Math.PI) : b.homingAngle);
+  else ctx.scale(b.dir, 1);
+  ctx.fillStyle = '#ff9b32';
+  const flame = 12 + Math.sin(performance.now() / 45) * 5;
+  ctx.beginPath(); ctx.moveTo(-17, -6); ctx.lineTo(-17 - flame, 0); ctx.lineTo(-17, 6); ctx.fill();
+  ctx.fillStyle = '#c9d8ea'; ctx.fillRect(-18, -8, 26, 16);
+  ctx.fillStyle = '#ff3849'; ctx.beginPath(); ctx.moveTo(8, -8); ctx.lineTo(20, 0); ctx.lineTo(8, 8); ctx.fill();
+  ctx.fillStyle = '#71849a'; ctx.fillRect(-17, -12, 7, 24); ctx.restore();
+}
+
+function drawCeilingSpikes(b) {
+  const y = b.state === 'falling' || b.state === 'landed' ? b.curY : b.y;
+  ctx.fillStyle = b.state === 'warn' ? '#ff3849' : '#b8cbe0';
+  ctx.fillRect(b.x, y, b.w, 8);
+  for (let i = 0; i < 3; i++) {
+    const x = b.x + i * b.w / 3;
+    ctx.beginPath(); ctx.moveTo(x, y + 8); ctx.lineTo(x + b.w / 6, y + b.h); ctx.lineTo(x + b.w / 3, y + 8); ctx.fill();
+  }
+}
+
 function drawFallingBlocks() {
   for (const b of fallingBlocks) {
     if (b.gone) continue;
+    if (b.ceilingSpikes) drawCeilingSpikes(b);
     if (b.state === 'warn') {
       const pulse = 0.4 + Math.sin(performance.now() / 90) * 0.3;
       ctx.fillStyle = `rgba(255,80,80,${0.25 + pulse * 0.25})`;
@@ -2152,7 +2451,7 @@ function drawFallingBlocks() {
       ctx.textAlign = 'start';
       continue;
     }
-    if (b.state === 'falling' || b.state === 'landed') {
+    if (!b.ceilingSpikes && (b.state === 'falling' || b.state === 'landed')) {
       ctx.fillStyle = '#6b4a2b';
       ctx.fillRect(b.x, b.curY, b.w, b.h);
       ctx.fillStyle = '#8b5a2b';
@@ -2207,7 +2506,8 @@ function drawBombs() {
       continue;
     }
     if (b.state === 'active') {
-      drawBombIcon(b.kind === 'sky' ? b.x : b.curX, b.kind === 'sky' ? b.curY : b.y, 14);
+      if (b.missile) drawMissile(b);
+      else drawBombIcon(b.kind === 'sky' ? b.x : b.curX, b.kind === 'sky' ? b.curY : b.y, 14);
     }
   }
 }
@@ -2421,6 +2721,29 @@ function drawPortalCrackle(cx, cy, rx, ry) {
     ctx.lineTo(x, y);
   }
   ctx.stroke();
+  ctx.restore();
+}
+
+function drawChasingGhost() {
+  const ghost = chasingGhost;
+  if (!ghost) return;
+  ctx.save();
+  ctx.translate(ghost.x, ghost.y);
+  ctx.globalAlpha = ghost.t < ghost.delay ? 0.65 : 1;
+  ctx.shadowColor = '#ff3b16'; ctx.shadowBlur = 20;
+  // Animated flames surround the same small silhouette as the player.
+  for (let i = 0; i < 5; i++) {
+    const x = -3 + i * 7;
+    const rise = 10 + Math.sin(ghost.t * 13 + i * 1.7) * 7;
+    ctx.fillStyle = i % 2 ? '#ffb52e' : '#ff581c';
+    ctx.beginPath(); ctx.moveTo(x - 5, 24); ctx.lineTo(x + 1, -rise); ctx.lineTo(x + 8, 24); ctx.fill();
+  }
+  ctx.fillStyle = '#e52b39';
+  ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(20, 0); ctx.quadraticCurveTo(26, 0, 26, 6);
+  ctx.lineTo(26, 32); ctx.lineTo(20, 36); ctx.lineTo(13, 32); ctx.lineTo(6, 36); ctx.lineTo(0, 32);
+  ctx.lineTo(0, 6); ctx.quadraticCurveTo(0, 0, 6, 0); ctx.fill();
+  ctx.shadowBlur = 0; ctx.fillStyle = '#fff1a8';
+  ctx.fillRect(player.x >= ghost.x ? 17 : 5, 9, 5, 5);
   ctx.restore();
 }
 

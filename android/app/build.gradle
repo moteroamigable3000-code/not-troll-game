@@ -13,12 +13,21 @@ android {
     namespace 'com.bfjstudios.nottroll'
     compileSdk 36
 
+    // The game has one source of truth at the repository root. Android only
+    // packages a generated copy for its WebView at build time, so edits made
+    // for web/PC are automatically included in the next APK.
+    sourceSets {
+        main {
+            assets.srcDirs = [file("$buildDir/generated/webAssets")]
+        }
+    }
+
     defaultConfig {
         applicationId 'com.bfjgames.llc'
         minSdkVersion 23
         targetSdkVersion 36
-        versionCode 3
-        versionName '1.0.2'
+        versionCode 7
+        versionName '1.0.6'
     }
 
     signingConfigs {
@@ -52,9 +61,28 @@ android {
     }
 }
 
+def webAssetsDir = rootProject.file('..')
+def generatedWebAssetsDir = file("$buildDir/generated/webAssets")
+
+tasks.register('syncWebGameAssets', Sync) {
+    from(webAssetsDir) {
+        include 'index.html'
+        include 'style.css'
+        include 'game.min.js'
+        include 'recursos/**'
+    }
+    into(generatedWebAssetsDir)
+}
+
+tasks.named('preBuild') {
+    dependsOn(tasks.named('syncWebGameAssets'))
+}
+
 dependencies {
     // Google Play Billing Library directly — no RevenueCat layer for now
     // (see SubscriptionBridge.kt). A cross-platform entitlement backend via
     // RevenueCat may be reconnected later; see PLAY_RELEASE.md.
     implementation 'com.android.billingclient:billing:8.3.0'
+    // Schedules the daily "come back and play" reminder notification.
+    implementation 'androidx.work:work-runtime-ktx:2.10.1'
 }

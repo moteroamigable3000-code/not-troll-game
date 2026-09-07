@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=16">
+<link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
   <div id="wrap">
@@ -26,8 +26,8 @@
       <div id="canvasFrame">
         <div id="hud">
           <div id="levelLabel">Nivel 1</div>
-          <div id="deathLabel">Muertes: 0</div>
-          <div id="coinLabel">🪙 0</div>
+          <div id="deathLabel">&#x1F480; 0</div>
+          <div id="coinLabel">&#x1FA99; 0</div>
           <button id="mapBtn" class="menuBtn">Mapa (Esc)</button>
           <button id="optionsBtn" class="menuBtn">Opciones</button>
           <button id="restartBtn">Reiniciar (R)</button>
@@ -96,21 +96,44 @@
       <button class="menuBtn backBtn" data-close="optionsMenu">Volver</button>
     </div>
 
-    <div id="shopMenu" class="screenOverlay" hidden>
-      <h2>Tienda</h2>
-      <div class="optionRow">
-        <span>Monedas</span>
-        <span id="shopCoinBalance">🪙 0</span>
+    <div id="shopMenu" class="screenOverlay shopScreen" hidden>
+      <div class="shopHeader">
+        <h2>Tienda</h2>
+        <div class="shopCoinBadge">&#x1FA99; <span id="shopCoinBalance">0</span></div>
       </div>
-      <div id="shopSkinsList"></div>
-      <div class="optionRow">
-        <span>Bandera de control (<span id="shopCheckpointCount">0</span>)</span>
-        <button id="shopCheckpointBtn" class="menuBtn">Comprar (25)</button>
+      <div id="shopTabs" class="shopTabs">
+        <button class="menuBtn authTab active" data-shop-tab="skins" type="button">Aspectos</button>
+        <button class="menuBtn authTab" data-shop-tab="accesorios" type="button">Accesorios</button>
+        <button class="menuBtn authTab" data-shop-tab="premium" type="button">Premium</button>
       </div>
-      <div id="shopRealMoneySection">
-        <div id="shopAdsRow" class="optionRow">
-          <span id="shopSubLabel">SUSCRIPCIÓN PREMIUM (Cero Anunciós + 150 monedas /mes)</span>
-          <button id="shopAdsOffBtn" class="menuBtn">Suscribirse</button>
+      <div id="shopPanelSkins" class="shopPanel">
+        <div id="shopSkinsList" class="shopCardGrid"></div>
+      </div>
+      <div id="shopPanelAccesorios" class="shopPanel" hidden>
+        <div class="shopCard shopCardWide">
+          <div class="shopCardWideLabel">
+            <div class="flagIcon">
+              <div class="flagPole"></div>
+              <div class="flagCloth"></div>
+              <div class="flagCloth"></div>
+              <div class="flagBase"></div>
+            </div>
+            <span>Bandera de control (<span id="shopCheckpointCount">0</span>)</span>
+          </div>
+          <button id="shopCheckpointBtn" class="menuBtn">Comprar (25)</button>
+        </div>
+      </div>
+      <div id="shopPanelPremium" class="shopPanel" hidden>
+        <div id="shopRealMoneySection" class="shopPremiumBanner">
+          <div class="shopPremiumIcon">👑</div>
+          <div class="shopPremiumInfo">
+            <span id="shopSubLabel" class="shopPremiumTitle">SUSCRIPCIÓN PREMIUM</span>
+            <ul class="shopPremiumBenefits">
+              <li>Sin anuncios</li>
+              <li>+150 monedas cada mes</li>
+            </ul>
+          </div>
+          <button id="shopAdsOffBtn" class="menuBtn shopPremiumBtn">Suscribirse</button>
         </div>
         <div id="shopError" class="authError" hidden></div>
       </div>
@@ -131,10 +154,40 @@
           </div>
           <div class="formRow">
             <label for="authPassword">Contrasena</label>
-            <input id="authPassword" name="password" type="password" autocomplete="current-password" maxlength="72" required>
+            <div class="passwordField">
+              <input id="authPassword" name="password" type="password" autocomplete="current-password" maxlength="72" required>
+              <button type="button" id="authPasswordToggle" class="passwordToggle" aria-label="Mostrar contrasena">&#128065;</button>
+            </div>
           </div>
           <div id="authError" class="authError" hidden></div>
           <button id="authSubmitBtn" class="menuBtn" type="submit">Iniciar sesion</button>
+          <button id="forgotPasswordLink" class="linkBtn" type="button">Olvide mi contrasena</button>
+        </form>
+        <form id="forgotForm" hidden>
+          <div class="formRow">
+            <label for="forgotEmail">Correo</label>
+            <input id="forgotEmail" name="email" type="email" autocomplete="email" maxlength="254" required>
+          </div>
+          <div id="forgotError" class="authError" hidden></div>
+          <button id="forgotSubmitBtn" class="menuBtn" type="submit">Enviar codigo</button>
+          <button id="forgotBackLink" class="linkBtn" type="button">Volver a iniciar sesion</button>
+        </form>
+        <form id="codeForm" hidden>
+          <div id="codeSentNotice" class="authSuccess"></div>
+          <div class="formRow">
+            <label for="resetCode">Codigo (6 digitos)</label>
+            <input id="resetCode" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
+          </div>
+          <div class="formRow">
+            <label for="resetPassword">Nueva contrasena</label>
+            <div class="passwordField">
+              <input id="resetPassword" name="password" type="password" autocomplete="new-password" maxlength="72" minlength="4" required>
+              <button type="button" id="resetPasswordToggle" class="passwordToggle" aria-label="Mostrar contrasena">&#128065;</button>
+            </div>
+          </div>
+          <div id="resetError" class="authError" hidden></div>
+          <button id="resetSubmitBtn" class="menuBtn" type="submit">Restablecer contrasena</button>
+          <button id="codeBackLink" class="linkBtn" type="button">Volver a iniciar sesion</button>
         </form>
       </div>
       <div id="profileLoggedIn" hidden>
@@ -159,6 +212,11 @@
       </div>
       <p id="infoCopyright">&copy; Todos los derechos son reservados y propiedad intelectual de BFJ GAMES PE</p>
       <button class="menuBtn backBtn" data-close="infoMenu">Volver</button>
+    </div>
+
+    <div id="finalVideoScreen" class="screenOverlay videoScreen" hidden>
+      <video id="finalVideo" src="recursos/VIDEO_FINAL.mp4" playsinline></video>
+      <button id="finalVideoSkipBtn" class="menuBtn">Saltar</button>
     </div>
   </div>
   <script>
@@ -187,6 +245,6 @@
       document.head.appendChild(rcScript);
     }
   </script>
-  <script src="game.min.js?v=23"></script>
+  <script src="game.min.js?v=36"></script>
 </body>
 </html>

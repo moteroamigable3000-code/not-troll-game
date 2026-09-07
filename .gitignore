@@ -6,3 +6,4 @@ backend/__pycache__/
 backend/*.db
 backend/*.db-*
 /dist/
+/.gradle-user-home/
